@@ -1,0 +1,18 @@
+# F1 after opening an article returns to the list as it was
+key enter
+type clim
+key down down down down down down down down down down down down down down
+describe
+expect sel=10
+key enter
+expect article
+key f1
+expect search "clim" sel=10 "Climate & Development"
+shot /tmp/sb.png
+key enter
+key esc
+expect article
+key f1
+expect search "clim" sel=10
+key f1
+expect search "" sel=0

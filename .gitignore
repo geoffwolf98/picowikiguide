@@ -1,0 +1,6 @@
+build/
+build-pico/
+*.o
+*.d
+pwg-shot-*.png
+*.uf2

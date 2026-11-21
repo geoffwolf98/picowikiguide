@@ -1,0 +1,65 @@
+# start: two wikis, no state yet -> wiki list
+expect wikis n=2
+key enter
+expect search ""
+type Global warm
+describe
+expect search "Global warm"
+key enter
+expect article "Climate change"
+describe
+shot /tmp/s1.pbm
+key down
+expect page=2/
+key up
+expect page=1/
+key right
+expect focus=
+describe
+shot /tmp/s2.pbm
+key enter
+describe
+expect back=1
+shot /tmp/s3.pbm
+key esc
+expect article "Climate change"
+expect back=0
+key L
+describe
+shot /tmp/s4.pbm
+key esc
+key shift+right
+describe
+key /
+type climate
+key enter
+describe
+shot /tmp/s5.pbm
+key enter
+describe
+key esc
+key *
+expect fav
+key f2
+describe
+expect history
+key tab
+expect favourites n=1
+shot /tmp/s6.pbm
+key enter
+expect article "Climate change"
+key f4
+type 2*sqrt(16)+sin(30)
+key enter
+expect = "8.5"
+shot /tmp/s7.pbm
+key esc
+key f5
+expect help
+shot /tmp/s8.pbm
+key esc
+key f3
+describe
+restart
+describe
+expect article

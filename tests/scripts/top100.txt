@@ -1,0 +1,37 @@
+# needs a card with CLIMATE and TOP100, state reset
+key down enter
+expect search ""
+type evolution
+key enter
+expect article "Evolution" page=1/
+key L
+expect sections n=33
+key down down enter
+expect page=13/
+key shift+right
+expect page=18/
+key shift+left
+expect page=13/
+key end
+expect page=131/131
+key home
+expect page=1/
+key /
+type darwin
+key enter
+expect hits=26 hit=1
+key up
+expect hit=26
+key esc
+expectnot finding
+key f2
+expect history n=1
+key esc
+key f5 w
+expect wikis
+key enter
+expect search
+key f2
+expect history n=1
+restart
+expect search

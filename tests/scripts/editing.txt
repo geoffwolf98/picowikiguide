@@ -1,0 +1,34 @@
+# editing the search, find and calculator lines (needs CLIMATE first)
+key enter
+type Glbal warming
+key home right right
+type o
+expect search "Global warming"
+key end left left left left left left left bs
+expect search "Globalwarming"
+key space del
+expect search "Global arming"
+type w
+expect search "Global warming"
+key end del
+expect search ""
+type climate change
+key f1
+expect search ""
+type Global warming
+key enter
+expect article "Climate change"
+key /
+type cimate
+key left left left left left
+type l
+key enter
+expect hits=
+expectnot hits=0
+key esc
+key f4
+type 2*3+4
+key left left bs
+type 5
+key enter
+expect = "14"

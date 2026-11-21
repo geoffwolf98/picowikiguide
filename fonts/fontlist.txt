@@ -1,0 +1,19 @@
+# id         bdf file (relative to this file)                       note
+TEXT         bdf/text.bdf          body text, Liberation Serif 15px
+BOLD         bdf/textb.bdf         bold [tight]
+ITALIC       bdf/texti.bdf         italic
+BOLDITALIC   bdf/textbi.bdf        bold italic [tight]
+TITLE        bdf/title.bdf         article title, Liberation Sans Bold 19px
+HEADING      bdf/subtitle.bdf      section headings, Liberation Sans Bold 17px
+SMALL        bdf/small.bdf         small print, Liberation Sans 10px
+EXTRA        bdf/textipa.bdf       fallback: IPA, extended Latin/Greek (Junicode 15px)
+MATH         bdf/math.bdf          fallback: maths symbols (DejaVu Sans 13px, tools/ttf2bdf.py)
+MATHSMALL    bdf/mathsmall.bdf     maths symbols, Greek, Latin-1 for sub/superscripts (DejaVu Sans 10px)
+# the 18 px set PicoWikiGuide uses: Liberation, 4 grey levels via tools/ttf2grey.py
+TEXTL        bdf/textlg.bdf        body text large, Liberation Serif 18px
+BOLDL        bdf/textblg.bdf       bold large [tight]
+ITALICL      bdf/textilg.bdf       italic large
+BOLDITALICL  bdf/textbilg.bdf      bold italic large [tight]
+TITLEL       bdf/titlelg.bdf       article title large, Liberation Sans Bold 23px
+HEADINGL     bdf/subtitlelg.bdf    section headings large, Liberation Sans Bold 20px
+SMALLL       bdf/smalll.bdf        small print large, Liberation Sans 12px
