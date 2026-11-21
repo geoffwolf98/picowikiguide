@@ -1,0 +1,47 @@
+# memory: no leaks, no holes (run with PWG_HEAP=BYTES for a heap like the
+# PicoCalc's; without it the expectmem lines check nothing)
+key down enter
+expect search
+mem
+expectmem whole
+memmark
+type evolution
+key enter
+key down down down pgdn pgdn
+key L
+key down enter
+key /
+type darwin
+key enter down down esc
+key *
+key f2 tab enter
+key f4
+type 2+2
+key enter esc
+key f5 esc
+key f3 f3 f3
+key f1 f1
+expect search ""
+mem
+expectmem same
+expectmem whole
+# switching wikis (the PicoCalc restarts; here they open directly)
+key f5 w up enter
+expect search
+key f5 w down enter
+key f5 w up enter
+key f5 w down enter
+key f5 w up enter
+key f5 w down enter
+expect search ""
+mem
+expectmem same
+expectmem whole
+# started again on an article: still one piece
+type evolution
+key enter
+expect article
+restart
+expect article "Evolution"
+mem
+expectmem whole

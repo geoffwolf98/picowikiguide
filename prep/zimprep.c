@@ -7,7 +7,7 @@
  *                  (default: from the input file name)
  *   --threads N    worker threads (default: all CPUs)
  *   --level N      zstd level (default 19)
- *   --dict-kb N    zstd dictionary size in KiB (default 112, 0 = none)
+ *   --dict-kb N    zstd dictionary size in KiB (default and most 112, 0 = none)
  *   --font FILE    the Unicode fallback font (default: fonts/WIKIFONT.BIN
  *                  next to the build folder); must match the firmware's
  *   --version
@@ -831,6 +831,10 @@ int main(int argc, char **argv)
 	memset(g_out, 0, BATCH * sizeof(art_out_t));
 
 	/* dictionary, trained on the pages of a sample of articles */
+	if (dict_kb > 112) {
+		fprintf(stderr, "zimprep: --dict-kb is at most 112 (the PicoCalc's dictionary buffer)\n");
+		return 2;
+	}
 	if (dict_kb > 0) {
 		uint32_t want = g_narts < 4000 ? g_narts : 4000, k, nsamp = 0, scap = 1 << 16;
 		size_t total = 0, limit = (size_t)dict_kb * 1024 * 100;

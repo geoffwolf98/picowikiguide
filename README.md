@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.6.0 (21 Nov 2026): the Unicode font is compressed; the firmware is half the size.
+Version 0.6.1 (21 Nov 2026): steadier memory, list selection like links, Tab/Del/8/F keys.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.6.0.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.6.1.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -104,7 +104,8 @@ build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
   it, the name comes from the ZIM's file name.
 * `--threads N`: worker threads (default: all CPUs).
 * `--level N`: zstd level (default 19).
-* `--dict-kb N`: dictionary size in KiB (default 112).
+* `--dict-kb N`: dictionary size in KiB (default and most 112: the
+  PicoCalc has a fixed 112 KiB dictionary buffer).
 * `--font FILE`: the Unicode fallback font (default `fonts/WIKIFONT.BIN`
   of this source). It must be the one built into the firmware.
 
@@ -140,14 +141,14 @@ build/pwg-sdl ~/card
 | F5 | Help, wiki details; W there chooses another wiki |
 | Up / Down (or Space) | Previous / next page |
 | Shift+Up / Shift+Down (Page Up / Page Down on a PC) | Previous / next section |
-| Left / Right (or Tab / Shift+Tab) | Previous / next link on the page |
+| Left / Right | Previous / next link on the page |
 | Enter | Follow the focused link |
 | Esc or Backspace | Back |
 | `[` `]`, or Shift+Left / Shift+Right on a PC | Previous / next section |
 | L | Section list |
-| / | Find in the article: type, Enter or Down for the next match, Up for the previous, Esc to close |
-| * | Favourite on or off (a star shows in the top bar) |
-| Shift+Tab / Shift+Del (Home / End on a PC) | First / last page |
+| F or / | Find in the article: type, Enter or Down for the next match, Up for the previous, Esc to close |
+| * or 8 | Favourite on or off (a star shows in the top bar) |
+| Tab / Del (or Shift+Tab / Shift+Del, Home / End on a PC) | First / last page |
 
 Search: type a title, Up/Down to choose, Enter to open. Esc clears what
 you typed, then goes back to the article.
@@ -187,6 +188,16 @@ favourites and state.
 
 `pwg-imgtest` runs the same scripts on a FAT32 card image with the
 PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
+`tests/run.sh` makes that image itself (`tests/mkimage.py`) when
+pyfatfs is installed (`pip install pyfatfs`).
+
+The scripts run with `PWG_HEAP=87800`: a heap like the PicoCalc's (the
+firmware's free RAM: 0x20080000 minus the `end` symbol, from
+`arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
+newlib does, so running out of memory, holes and leaks show up on the
+PC. `tests/scripts/memory.txt` checks that the free memory comes back
+exactly and stays in one block. `pagecat --index-check` searches for
+every title and prefixes of it with several index summary steps.
 
 ## Changes
 
@@ -212,6 +223,15 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
   character is still there and draws the same; wikis do not need
   preparing again (the font fingerprint is unchanged). About 18 KB more
   memory is free (the splash and messages share the app's frame buffer).
+* 0.6.1: memory: the page, dictionary and decompression buffers are
+  fixed (no longer taken from the heap each time a wiki opens), the
+  title search keeps every 512th index page in memory instead of every
+  128th (about 16 KB less with English Wikipedia, a few ms more per
+  search), and opening files no longer takes and frees 16 KB blocks; so
+  the free memory stays in one piece. The selected row in lists and the
+  History / Favourites tab get a box and underline like a focused link
+  instead of being inverted. In an article Tab and Del go to the first
+  and last page, 8 sets a favourite like *, and F finds like /.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

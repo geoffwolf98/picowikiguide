@@ -57,6 +57,9 @@ int fat_list(fat_vol_t *v, const char *dir, fat_dir_cb cb, void *arg);
  * called now and then with clusters done / total. */
 typedef void (*fat_progress_cb)(void *arg, uint32_t done, uint32_t total);
 int fat_build_extents(fat_vol_t *v, fat_file_t *f, fat_progress_cb cb, void *arg);
+/* lend a buffer (at least 16 KB) for walking FAT chains instead of the
+ * heap; it must not hold anything else while a file is being opened */
+void fat_set_scratch(uint8_t *buf, uint32_t len);
 
 /* serialise / restore extents (format: count, then 3 words each) */
 uint32_t fat_extents_size(const fat_file_t *f);

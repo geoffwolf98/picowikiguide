@@ -9,6 +9,7 @@
 #include "zw.h"
 #include "plat.h"
 #include "fat.h"
+#include "wiki.h"
 #include "blockdev.h"
 #include "sd.h"
 #include "plat_storage.h"
@@ -19,6 +20,9 @@ static fat_vol_t vol;
 
 int storage_mount(void)
 {
+	uint32_t len;
+	uint8_t *buf = wiki_scratch(&len);
+	fat_set_scratch(buf, len);
 	return fat_mount(&vol);
 }
 

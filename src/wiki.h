@@ -75,6 +75,9 @@ typedef struct wiki_section {
  * fingerprint (ZW_EUNSUPPORTED: made for other firmware or fonts) */
 int wiki_open(wiki_t *w, const zw_io_t *toc, const zw_io_t *data);
 void wiki_close(wiki_t *w);
+/* a buffer the file system code may use while no page is being read
+ * (the compressed frame buffer) */
+uint8_t *wiki_scratch(uint32_t *len);
 
 int wiki_article(wiki_t *w, uint32_t art, wiki_art_t *a);
 

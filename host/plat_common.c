@@ -9,6 +9,7 @@
 #include "plat.h"
 #include "gfx.h"
 #include "plat_common.h"
+#include "heapemu.h"
 
 static const struct { const char *name; int key; } keys[] = {
 	{ "up", K_UP }, { "down", K_DOWN }, { "left", K_LEFT }, { "right", K_RIGHT },
@@ -66,7 +67,8 @@ static void chunk(FILE *f, const char *type, const uint8_t *d, uint32_t n)
 	be32(h, n);
 	memcpy(h + 4, type, 4);
 	fwrite(h, 1, 8, f);
-	fwrite(d, 1, n, f);
+	if (n)
+		fwrite(d, 1, n, f);
 	c = crc(0xffffffffu, h + 4, 4);
 	c = crc(c, d, n) ^ 0xffffffffu;
 	be32(t, c);
@@ -150,6 +152,10 @@ void plat_restart(void) {}
 int plat_mem(uint32_t *f, uint32_t *l)
 {
 	const char *s = getenv("PWG_FAKEMEM");
+	if (heapemu_on()) {
+		heapemu_stats(f, l);
+		return 0;
+	}
 	unsigned a, b;
 	if (!s || sscanf(s, "%u,%u", &a, &b) != 2)
 		return -1;

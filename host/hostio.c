@@ -4,6 +4,7 @@
  */
 #define _FILE_OFFSET_BITS 64
 #include "hostio.h"
+#include "heapemu.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -14,13 +15,31 @@
 zw_stats_t zw_stats;
 int zw_log_enabled = 1;
 
-void *zw_alloc(size_t size) { return malloc(size ? size : 1); }
-void *zw_calloc(size_t size) { return calloc(1, size ? size : 1); }
-void zw_free(void *p) { free(p); }
+/* PWG_HEAP=BYTES: a heap like the PicoCalc's (host/heapemu.c) */
+void *zw_alloc(size_t size)
+{
+	return heapemu_on() ? heapemu_alloc(size) : malloc(size ? size : 1);
+}
+void *zw_calloc(size_t size)
+{
+	void *p;
+	if (!heapemu_on())
+		return calloc(1, size ? size : 1);
+	if ((p = heapemu_alloc(size)) != NULL)
+		memset(p, 0, size);
+	return p;
+}
+void zw_free(void *p)
+{
+	if (heapemu_on())
+		heapemu_free(p);
+	else
+		free(p);
+}
 void *zw_realloc(void *p, size_t old_size, size_t new_size)
 {
 	(void)old_size;
-	return realloc(p, new_size);
+	return heapemu_on() ? heapemu_realloc(p, new_size) : realloc(p, new_size);
 }
 
 void zw_log(const char *fmt, ...)

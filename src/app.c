@@ -184,6 +184,16 @@ static void topbar(const char *left, const char *right)
 		text(SCREEN_W - 5 - rw, 13, BAR_FONT, right, WHITE);
 }
 
+/* the selection mark, as for a focused link: a double box round it and
+ * a solid line under the text (inverting blurs the smooth grey text) */
+static void sel_box(int x, int y, int w, int h, int base, int tw)
+{
+	gfx_rect(A.fb, SCREEN_STRIDE, SCREEN_H, x, y, w, h, BLACK);
+	gfx_rect(A.fb, SCREEN_STRIDE, SCREEN_H, x + 1, y + 1, w - 2, h - 2, BLACK);
+	if (tw > 0)
+		gfx_hline(A.fb, SCREEN_STRIDE, SCREEN_H, x + 5, base + 2, tw, BLACK);
+}
+
 static void row(int i, const char *s, const char *right, int selected)
 {
 	int y = LIST_TOP + i * ROW_H, base = y + 17;
@@ -191,8 +201,10 @@ static void row(int i, const char *s, const char *right, int selected)
 	text_fit(6, base, ROW_FONT, s, SCREEN_W - 14 - (rw ? rw + 8 : 0), BLACK);
 	if (right)
 		text(SCREEN_W - 6 - rw, base - 2, BAR_FONT, right, BLACK);
-	if (selected)
-		gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 2, y, SCREEN_W - 4, ROW_H - 1, INVERT);
+	if (selected) {
+		int tw = font_width(ROW_FONT, s, strlen(s)), max = SCREEN_W - 14 - (rw ? rw + 8 : 0);
+		sel_box(1, y, SCREEN_W - 2, ROW_H, base, tw < max ? tw : max);
+	}
 }
 
 static void hint(const char *s)
@@ -890,12 +902,12 @@ static void draw_tabs(const char *a, const char *b, int which)
 	w = font_width(ROW_FONT, a, strlen(a));
 	text(x, y + 17, ROW_FONT, a, BLACK);
 	if (which == 0)
-		gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, x - 3, y, w + 6, 22, INVERT);
+		sel_box(x - 5, y, w + 10, 23, y + 17, w);
 	x += w + 16;
 	w = font_width(ROW_FONT, b, strlen(b));
 	text(x, y + 17, ROW_FONT, b, BLACK);
 	if (which == 1)
-		gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, x - 3, y, w + 6, 22, INVERT);
+		sel_box(x - 5, y, w + 10, 23, y + 17, w);
 }
 
 static void draw_help(void)
@@ -907,8 +919,9 @@ static void draw_help(void)
 		"Shift+Up/Down  previous / next section",
 		"Left/Right  previous / next link",
 		"Enter  follow link    Esc  back",
-		"L sections   / find   * favourite",
-		"Shift+Tab first page  Shift+Del last",
+		"L sections   F or / find in page",
+		"* or 8  favourite (on / off)",
+		"Tab first page   Del last page",
 		"W  choose another wiki",
 	};
 	char s[80];
@@ -1132,10 +1145,10 @@ static void article_keys(int key, int mods)
 	case K_PGUP:	/* Shift+Up */
 		section_jump(-1);
 		break;
-	case K_HOME:
+	case K_HOME: case K_TAB:	/* Shift+Tab sends Home on the PicoCalc */
 		load_page(0);
 		break;
-	case K_END:
+	case K_END: case K_DEL:		/* Shift+Del sends End */
 		load_page(A.a.pages ? A.a.pages - 1 : 0);
 		break;
 	case K_LEFT:
@@ -1149,9 +1162,6 @@ static void article_keys(int key, int mods)
 			section_jump(1);
 		else
 			focus_move(1);
-		break;
-	case K_TAB:
-		focus_move((mods & KM_SHIFT) ? -1 : 1);
 		break;
 	case K_ENTER:
 		follow();
@@ -1181,7 +1191,7 @@ static void article_keys(int key, int mods)
 	case '/': case 'f': case 'F':
 		A.finding = 1;
 		break;
-	case '*':
+	case '*': case '8':	/* 8: * without Shift */
 		{
 			int i;
 			for (i = 0; i < A.nfav; ++i)
@@ -1412,6 +1422,8 @@ void app_init(void)
 	uint8_t *st = NULL;
 	uint32_t len = 0;
 	int safe = plat_keys_held(), i;
+	if (A.open)	/* started again (tests): as after a power cut */
+		close_wiki();
 	memset(&A, 0, sizeof(A));
 	A.screen = S_WIKIS;
 	A.hint_on = 1;
@@ -1419,7 +1431,20 @@ void app_init(void)
 	A.focus = -1;
 	A.hit = -1;
 	find_wikis();
-	if (plat_load(STATE_FILE, &st, &len) == 0 && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe) {
+	/* copy the state and free it before opening anything (a block freed
+	 * after the wiki's would leave a hole under them) */
+	if (plat_load(STATE_FILE, &st, &len) == 0) {
+		static uint8_t stc[STATE_SIZE];
+		if (len > STATE_SIZE)
+			len = STATE_SIZE;
+		memcpy(stc, st, len);
+		zw_free(st);
+		st = stc;
+	} else {
+		st = NULL;
+		len = 0;
+	}
+	if (st && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe) {
 		char name[16];
 		memcpy(&A.calc_ans, st + 32, sizeof(double));
 		A.calc_rad = st[40] != 0;
@@ -1446,7 +1471,6 @@ void app_init(void)
 				break;
 			}
 	}
-	zw_free(st);
 	if (!A.open) {
 		if (A.nwikis == 1 && open_wiki(A.wikis[0]) == 0)
 			A.screen = S_SEARCH;

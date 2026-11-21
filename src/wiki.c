@@ -10,6 +10,29 @@
 #define MARGIN_L 4
 #define MARGIN_R 5
 
+/* The big buffers are fixed (in .bss, not the heap): one wiki is open at
+ * a time, and opening and closing wikis then cannot split the heap into
+ * pieces too small for them.  Sizes: a dictionary up to DICT_MAX (zimprep
+ * makes 112 KiB), the zstd context and dictionary tables (checked against
+ * zstd's own estimates when a wiki opens). */
+#define DICT_MAX  (112 * 1024)
+#define CBUF_MAX  ZSTD_COMPRESSBOUND(FRAME_MAX)
+#define DCTX_WS   (96 * 1024)
+#define DDICT_WS  (28 * 1024)
+static uint8_t s_frame[FRAME_MAX];
+static uint8_t s_cbuf[CBUF_MAX];
+static uint8_t s_dict[DICT_MAX];
+static uint64_t s_dctx[DCTX_WS / 8];
+static uint64_t s_ddict[DDICT_WS / 8];
+static wiki_t *s_open;		/* the wiki using them */
+
+uint8_t *wiki_scratch(uint32_t *len)
+{
+	/* the compressed frame buffer only holds data inside wiki_page() */
+	*len = sizeof(s_cbuf);
+	return s_cbuf;
+}
+
 static int rd(const zw_io_t *io, uint64_t off, void *buf, uint32_t len)
 {
 	return zw_io_read(io, off, buf, len) < 0 ? ZW_EIO : 0;
@@ -26,17 +49,15 @@ int wiki_open(wiki_t *w, const zw_io_t *toc, const zw_io_t *data)
 	uint8_t *h;
 	int r = ZW_EFORMAT;
 
+	if (s_open)
+		return ZW_ENOMEM;	/* one at a time */
 	memset(w, 0, sizeof(*w));
 	w->toc = *toc;
 	w->data = *data;
 	w->frame_no = TOC_NONE;
-	h = zw_alloc(TOC_HDR_SIZE);
-	if (!h)
-		return ZW_ENOMEM;
-	if (rd(toc, 0, h, TOC_HDR_SIZE) < 0) {
-		zw_free(h);
+	h = s_frame;		/* the header goes through the frame buffer */
+	if (rd(toc, 0, h, TOC_HDR_SIZE) < 0)
 		return ZW_EIO;
-	}
 	if (zw_rd32(h + TOC_H_MAGIC) != TOC_MAGIC || zw_rd16(h + TOC_H_VERSION) != TOC_VERSION)
 		goto out;
 	r = ZW_EUNSUPPORTED;
@@ -64,41 +85,44 @@ int wiki_open(wiki_t *w, const zw_io_t *toc, const zw_io_t *data)
 	if (!w->articles || h[TOC_H_PPF] != 1)
 		goto out;
 
+	r = ZW_EUNSUPPORTED;
+	if (w->dict_len > DICT_MAX)
+		goto out;
 	r = ZW_ENOMEM;
-	w->frame = zw_alloc(FRAME_MAX);
-	w->dctx = ZSTD_createDCtx();
-	if (!w->frame || !w->dctx)
+	if (ZSTD_estimateDCtxSize() > sizeof(s_dctx) ||
+	    ZSTD_estimateDDictSize(w->dict_len, ZSTD_dlm_byRef) > sizeof(s_ddict))
+		goto out;
+	w->frame = s_frame;
+	w->cbuf = s_cbuf;
+	w->ccap = sizeof(s_cbuf);
+	w->dctx = ZSTD_initStaticDCtx(s_dctx, sizeof(s_dctx));
+	if (!w->dctx)
 		goto out;
 	if (w->dict_len) {
-		w->dict = zw_alloc(w->dict_len);
-		if (!w->dict)
-			goto out;
+		w->dict = s_dict;
 		r = ZW_EIO;
 		if (rd(toc, zw_rd32(h + TOC_H_DICT_OFF), w->dict, w->dict_len) < 0)
 			goto out;
 		r = ZW_ENOMEM;
 		/* by reference: the dictionary is not copied again */
-		w->ddict = ZSTD_createDDict_byReference(w->dict, w->dict_len);
+		w->ddict = (void *)ZSTD_initStaticDDict(s_ddict, sizeof(s_ddict), w->dict, w->dict_len,
+							ZSTD_dlm_byRef, ZSTD_dct_auto);
 		if (!w->ddict)
 			goto out;
 	}
-	zw_free(h);
+	s_open = w;
 	return 0;
 out:
-	zw_free(h);
-	wiki_close(w);
+	memset(w, 0, sizeof(*w));
+	w->frame_no = TOC_NONE;
 	return r;
 }
 
 void wiki_close(wiki_t *w)
 {
-	if (w->ddict)
-		ZSTD_freeDDict(w->ddict);
-	if (w->dctx)
-		ZSTD_freeDCtx(w->dctx);
-	zw_free(w->dict);
-	zw_free(w->frame);
-	zw_free(w->cbuf);
+	/* the buffers are fixed: nothing to free */
+	if (s_open == w)
+		s_open = NULL;
 	memset(w, 0, sizeof(*w));
 	w->frame_no = TOC_NONE;
 }
@@ -135,15 +159,8 @@ static int load_frame(wiki_t *w, uint32_t f)
 	clen = r[5] | ((uint32_t)r[6] << 8) | ((uint32_t)r[7] << 16);
 	if (!clen || off + clen > w->data_len)
 		return ZW_EFORMAT;
-	if (clen > w->ccap) {
-		zw_free(w->cbuf);
-		w->ccap = (clen + 1023) & ~1023u;
-		w->cbuf = zw_alloc(w->ccap);
-		if (!w->cbuf) {
-			w->ccap = 0;
-			return ZW_ENOMEM;
-		}
-	}
+	if (clen > w->ccap)
+		return ZW_EFORMAT;	/* more than any frame compresses to */
 	if (rd(&w->data, off, w->cbuf, clen) < 0)
 		return ZW_EIO;
 	w->frame_no = TOC_NONE;

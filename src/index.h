@@ -9,10 +9,11 @@
  *                     u32 target entry, title bytes
  *   top table       N entries of 20 bytes: u32 first record number,
  *                     u8 key_len, 15 bytes folded key prefix
- *   summary         every IDX_STRIDE-th top entry (loaded into RAM)
+ *   summary         every IDX_STRIDE-th top entry
  *
- * A lookup binary-searches the summary in RAM, reads one slice of the
- * top table, then scans one or two 4 KiB pages.
+ * A lookup binary-searches a summary in RAM (every idx step-th top
+ * entry, 512 by default, taken from the file's summary), then the top
+ * entries of that span on the card, then scans one or two 4 KiB pages.
  */
 #ifndef INDEX_H
 #define INDEX_H
@@ -62,7 +63,8 @@ typedef struct idx {
 	char title[IDX_H_TITLE_LEN];
 	char lang[IDX_H_LANG_LEN];
 	char name[IDX_H_NAME_LEN];
-	uint8_t *summary;	/* sum_count * IDX_TOP bytes */
+	uint8_t *summary;	/* ram_count * IDX_TOP bytes */
+	uint32_t step, ram_count;	/* summary: every step-th top entry */
 	uint8_t page[IDX_PAGE];
 	uint32_t page_no;	/* page currently in page[], 0 = none */
 } idx_t;
@@ -70,6 +72,10 @@ typedef struct idx {
 /* parse just the header page (used to find the ZIM chunks) */
 int idx_parse_header(idx_t *x, const uint8_t *hdr);
 int idx_open(idx_t *x, const zw_io_t *io);
+/* pages per RAM summary entry for later idx_open calls: a multiple of
+ * IDX_STRIDE is read from the file's summary; any other value (tests)
+ * from the top table */
+void idx_set_step(uint32_t step);
 void idx_close(idx_t *x);
 
 /* position at the first record whose folded title is >= folded_query */

@@ -178,13 +178,27 @@ was worked out against, so the device need not inflate everything.
 `pagecat --font-fingerprint` checks both, and that every character
 draws the same both ways.
 
+### 4.4 Memory on the device
+
+The big buffers are fixed in .bss, not taken from the heap: the page
+frame (16 KB), the compressed frame (16.5 KB), the dictionary (112 KB
+at most), the zstd context (96 KB) and dictionary tables (28 KB). One
+wiki is open at a time. While no page is being read the compressed
+frame buffer is lent to the FAT code for walking cluster chains when a
+file is opened. The heap then holds only small things that live as
+long as the wiki (file records, extents, the index summary), so it
+does not split into pieces. The title index keeps every 512th page's
+top entry in memory (from the file's every-128th summary); a search
+then binary-searches the top entries of one 512 page span on the card
+(about 9 reads of 20 bytes, mostly from the block cache).
+
 
 zimprep and the firmware are built from the same `fonts/fonts.c`. The
 glyph widths zimprep lays out with are exactly the ones the device draws
 with. The fingerprint in the TOC catches a wiki made with different fonts;
 the device then asks for the wiki to be prepared again.
 
-### 4.4 Adding things later
+### 4.5 Adding things later
 
 * New page item types (formula bitmaps, pictures) use type >= 0x80, which
   older firmware skips.

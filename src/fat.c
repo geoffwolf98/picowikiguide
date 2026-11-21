@@ -292,6 +292,18 @@ static int add_extent(fat_file_t *f, uint32_t *cap, uint32_t fc, uint32_t dc)
 	return ZW_OK;
 }
 
+/* a lent buffer for the FAT window (not the heap: a 16 KB block taken
+ * and freed for every file opened leaves holes between the blocks that
+ * stay) */
+static uint8_t *scratch;
+static uint32_t scratch_len;
+
+void fat_set_scratch(uint8_t *buf, uint32_t len)
+{
+	scratch = buf;
+	scratch_len = len;
+}
+
 int fat_build_extents(fat_vol_t *v, fat_file_t *f, fat_progress_cb cb, void *arg)
 {
 	uint32_t csize = 512u << v->spc_shift;
@@ -307,7 +319,9 @@ int fat_build_extents(fat_vol_t *v, fat_file_t *f, fat_progress_cb cb, void *arg
 	f->n_ext = 0;
 	if (!need)
 		return ZW_OK;
-	if (!(win = zw_alloc(WINDOW_SECTORS * 512)))
+	if (scratch && scratch_len >= WINDOW_SECTORS * 512)
+		win = scratch;
+	else if (!(win = zw_alloc(WINDOW_SECTORS * 512)))
 		return ZW_ENOMEM;
 
 	for (i = 0; i < need; ++i) {
@@ -340,7 +354,8 @@ int fat_build_extents(fat_vol_t *v, fat_file_t *f, fat_progress_cb cb, void *arg
 		if (cb && (i & 0x3fff) == 0)
 			cb(arg, i, need);
 	}
-	zw_free(win);
+	if (win != scratch)
+		zw_free(win);
 	if (r < 0) {
 		zw_free(f->ext);
 		f->ext = NULL;

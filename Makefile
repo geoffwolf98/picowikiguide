@@ -11,7 +11,7 @@ ZSTD_FULL := $(wildcard third_party/zstd-full/common/*.c third_party/zstd-full/c
              third_party/zstd-full/decompress/*.c third_party/zstd-full/dictBuilder/*.c)
 XZ        := third_party/xz/xz_crc32.c third_party/xz/xz_dec_stream.c third_party/xz/xz_dec_lzma2.c
 PREP_SRC  := prep/zimprep.c prep/html.c prep/tex.c prep/zim.c prep/pic.c prep/layout.c \
-             src/fold.c src/index.c src/font.c src/inflate.c src/gfx.c fonts/fonts.c host/hostio.c
+             src/fold.c src/index.c src/font.c src/inflate.c src/gfx.c fonts/fonts.c host/hostio.c host/heapemu.c
 PREP_INC  := -Isrc -Iprep -Ihost -Ifonts -Ithird_party/zstd-full -Ithird_party/xz
 
 # the app side (what runs on the PicoCalc), built for the PC
@@ -21,7 +21,7 @@ APP_INC   := -Isrc -Ihost -Ifonts -Ipico -Ithird_party/zstd
 
 obj = $(patsubst %.c,$(BUILD)/$(2)/%.o,$(1))
 
-APP_SRC   := src/app.c src/splash.c src/calc.c $(APP_CORE) host/hostio.c host/plat_files.c host/plat_common.c
+APP_SRC   := src/app.c src/splash.c src/calc.c $(APP_CORE) host/hostio.c host/heapemu.c host/plat_files.c host/plat_common.c
 
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2 2>/dev/null)
 SDL_LIBS   := $(shell pkg-config --libs sdl2 2>/dev/null)
@@ -37,7 +37,7 @@ $(BUILD)/pwg-headless: $(call obj,host/plat_headless.c $(APP_SRC),app) $(call ob
 
 # the app with the PicoCalc's file code, on a FAT card image (tests)
 IMG_SRC := src/app.c src/splash.c src/calc.c $(APP_CORE) src/fat.c src/blockdev.c pico/plat_storage.c \
-           host/sd_image.c host/hostio.c host/plat_common.c
+           host/sd_image.c host/hostio.c host/heapemu.c host/plat_common.c
 $(BUILD)/pwg-imgtest: $(call obj,$(IMG_SRC),app) $(BUILD)/img/host/plat_headless.o $(call obj,$(DEC),dec)
 	$(CC) -o $@ $^ -lm
 
@@ -52,7 +52,7 @@ $(BUILD)/app/host/plat_sdl.o: host/plat_sdl.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(APP_INC) $(SDL_CFLAGS) -c $< -o $@
 
-$(BUILD)/pagecat: $(call obj,tests/pagecat.c $(APP_CORE) host/hostio.c host/plat_common.c,app) $(call obj,$(DEC),dec)
+$(BUILD)/pagecat: $(call obj,tests/pagecat.c $(APP_CORE) host/hostio.c host/heapemu.c host/plat_common.c,app) $(call obj,$(DEC),dec)
 	$(CC) -o $@ $^
 
 $(BUILD)/app/%.o: %.c

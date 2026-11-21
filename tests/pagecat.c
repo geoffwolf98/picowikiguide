@@ -5,6 +5,9 @@
  * pagecat DIR/NAME --check                 decode every page of every
  *                                          article, report problems
  * pagecat DIR/NAME --sections "Title"      list an article's sections
+ * pagecat DIR/NAME --index-check           every title (and prefixes of
+ *                                          it) found by search, with
+ *                                          several summary steps
  * pagecat --font-fingerprint [--patch]     check (or fill in) the
  *                                          fingerprint stored in a
  *                                          compressed fallback font
@@ -116,6 +119,85 @@ static int font_fp(const char *argv0, int patch)
 	return 0;
 }
 
+/* search for every title and some prefixes of it, and seek to every
+ * record number, with summary steps that put span edges everywhere;
+ * the answers must be what a plain scan gives */
+static int index_check(const char *base)
+{
+	static const uint32_t steps[] = { 1, 2, 3, 5, 7, 128, 512, 4096 };
+	char path[4096], key[256];
+	host_files_t f;
+	idx_t x;
+	idx_cursor_t c;
+	idx_record_t r;
+	char **keys;
+	size_t *klen;
+	uint32_t n = 0, i, si, bad = 0, seeks = 0;
+	snprintf(path, sizeof(path), "%s.IDX", base);
+	if (host_files_open(&f, path) < 0 || idx_open(&x, &f.io) < 0) {
+		fprintf(stderr, "cannot open %s\n", path);
+		return 1;
+	}
+	keys = calloc(x.records, sizeof(*keys));
+	klen = calloc(x.records, sizeof(*klen));
+	c.page = 1; c.off = 0; c.number = 0;
+	while (n < x.records && idx_next(&x, &c, &r) == 1) {
+		klen[n] = fold_utf8(r.title, strlen(r.title), key, sizeof(key));
+		keys[n] = malloc(klen[n] + 1);
+		memcpy(keys[n], key, klen[n]);
+		n++;
+	}
+	idx_close(&x);
+	if (n != x.records) {
+		printf("index: %u records read, header says %u\n", n, x.records);
+		return 1;
+	}
+	for (si = 0; si < sizeof(steps) / sizeof(steps[0]); ++si) {
+		idx_set_step(steps[si]);
+		if (idx_open(&x, &f.io) < 0)
+			return 1;
+		for (i = 0; i < n; ++i) {
+			static const size_t pl[] = { 1, 2, 3, 5, 8, 14, 15, 16, 1000 };
+			unsigned k;
+			for (k = 0; k < sizeof(pl) / sizeof(pl[0]); ++k) {
+				size_t ql = pl[k] < klen[i] ? pl[k] : klen[i];
+				uint32_t lo = 0, hi = n;
+				char q[257];
+				memcpy(q, keys[i], ql);
+				q[ql] = 0;
+				if (strlen(q) != ql)
+					continue;
+				while (lo < hi) {	/* first key >= q */
+					uint32_t mid = (lo + hi) / 2;
+					if (idx_keycmp(keys[mid], klen[mid], q, ql) < 0)
+						lo = mid + 1;
+					else
+						hi = mid;
+				}
+				seeks++;
+				if (idx_seek(&x, q, &c) < 0 || c.number != lo) {
+					if (bad++ < 10)
+						printf("step %u: \"%s\" gave %u, want %u\n",
+						       steps[si], q, c.number, lo);
+				}
+				if (pl[k] >= klen[i])
+					break;
+			}
+			if (idx_seek_number(&x, i, &c) < 0 || c.number != i ||
+			    idx_next(&x, &c, &r) != 1 ||
+			    fold_utf8(r.title, strlen(r.title), key, sizeof(key)) != klen[i] ||
+			    memcmp(key, keys[i], klen[i]) != 0) {
+				if (bad++ < 10)
+					printf("step %u: record %u not found by number\n", steps[si], i);
+			}
+		}
+		idx_close(&x);
+	}
+	idx_set_step(4 * IDX_STRIDE);
+	printf("index: %u records, %u pages, %u seeks, %u wrong\n", n, x.pages, seeks, bad);
+	return bad != 0;
+}
+
 int main(int argc, char **argv)
 {
 	host_files_t toc, data;
@@ -135,7 +217,8 @@ int main(int argc, char **argv)
 	for (ai = 1; ai < argc; ++ai) {
 		if (strcmp(argv[ai], "-o") == 0 && ai + 1 < argc)
 			out = argv[++ai];
-		else if (strcmp(argv[ai], "--check") == 0 || strcmp(argv[ai], "--sections") == 0) {
+		else if (strcmp(argv[ai], "--check") == 0 || strcmp(argv[ai], "--sections") == 0 ||
+			 strcmp(argv[ai], "--index-check") == 0) {
 			if (npos < 4)
 				pos[npos++] = argv[ai];
 		} else if (argv[ai][0] == '-' && argv[ai][1]) {
@@ -160,6 +243,8 @@ int main(int argc, char **argv)
 		argc = npos + 1;
 		argv = args;
 	}
+	if (strcmp(argv[2], "--index-check") == 0)
+		return index_check(argv[1]);
 	if (host_load_wikifont(argv0) < 0)
 		return 1;
 	snprintf(path, sizeof(path), "%s.TOC", argv[1]);

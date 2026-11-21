@@ -44,9 +44,12 @@ int idx_parse_header(idx_t *x, const uint8_t *h)
 	return ZW_OK;
 }
 
+static uint32_t idx_step = 4 * IDX_STRIDE;
+
 int idx_open(idx_t *x, const zw_io_t *io)
 {
 	uint8_t h[512];
+	uint32_t i;
 	int r;
 
 	memset(x, 0, sizeof(*x));
@@ -58,13 +61,26 @@ int idx_open(idx_t *x, const zw_io_t *io)
 	if ((uint64_t)x->top_off + (uint64_t)x->pages * IDX_TOP > io->size ||
 	    (uint64_t)x->sum_off + (uint64_t)x->sum_count * IDX_TOP > io->size)
 		return ZW_EFORMAT;
-	x->summary = zw_alloc(x->sum_count * IDX_TOP + 1);
+	x->step = idx_step;
+	x->ram_count = (x->pages + x->step - 1) / x->step;
+	x->summary = zw_alloc(x->ram_count * IDX_TOP + 1);
 	if (!x->summary)
 		return ZW_ENOMEM;
-	if (x->sum_count &&
-	    (r = zw_io_read(io, x->sum_off, x->summary, x->sum_count * IDX_TOP)) < 0)
-		return r;
+	for (i = 0; i < x->ram_count; ++i) {
+		uint64_t at = x->step % IDX_STRIDE == 0 ?
+			x->sum_off + (uint64_t)i * (x->step / IDX_STRIDE) * IDX_TOP :
+			x->top_off + (uint64_t)i * x->step * IDX_TOP;
+		if ((r = zw_io_read(io, at, x->summary + i * IDX_TOP, IDX_TOP)) < 0) {
+			idx_close(x);
+			return r;
+		}
+	}
 	return ZW_OK;
+}
+
+void idx_set_step(uint32_t step)
+{
+	idx_step = step ? step : 1;
 }
 
 void idx_close(idx_t *x)
@@ -104,13 +120,19 @@ static const uint8_t *rec_at(idx_t *x, uint32_t off)
 	return p;
 }
 
+/* top entry i (0 based page) from the card */
+static int top_entry(idx_t *x, uint32_t i, uint8_t *e)
+{
+	return zw_io_read(&x->io, x->top_off + (uint64_t)i * IDX_TOP, e, IDX_TOP);
+}
+
 /* find the page whose range may hold the first key >= q, using the
- * summary in RAM and one slice of the top table */
+ * summary in RAM and then the top entries of one span on the card */
 static int find_page(idx_t *x, const char *q, size_t qlen, uint32_t *page,
 		     uint32_t *first_record)
 {
-	uint8_t slice[(IDX_STRIDE + 1) * IDX_TOP];
-	uint32_t lo = 0, hi = x->sum_count, seg, n, t;
+	uint8_t e[IDX_TOP];
+	uint32_t lo = 0, hi = x->ram_count, seg, n, t;
 	size_t qt = qlen > IDX_KEY ? IDX_KEY : qlen;
 	int r;
 
@@ -126,25 +148,27 @@ static int find_page(idx_t *x, const char *q, size_t qlen, uint32_t *page,
 		*first_record = 0;
 		return ZW_OK;
 	}
-	seg = (lo - 1) * IDX_STRIDE;
+	seg = (lo - 1) * x->step;
 	n = x->pages - seg;
-	if (n > IDX_STRIDE + 1)
-		n = IDX_STRIDE + 1;
-	if ((r = zw_io_read(&x->io, x->top_off + (uint64_t)seg * IDX_TOP, slice,
-			    n * IDX_TOP)) < 0)
-		return r;
-	lo = 0;
+	if (n > x->step + 1)
+		n = x->step + 1;
+	/* entry 0 of the span is known to be < q */
+	lo = 1;
 	hi = n;
 	while (lo < hi) {
 		uint32_t mid = (lo + hi) / 2;
-		if (top_less(slice + mid * IDX_TOP, q, qt))
+		if ((r = top_entry(x, seg + mid, e)) < 0)
+			return r;
+		if (top_less(e, q, qt))
 			lo = mid + 1;
 		else
 			hi = mid;
 	}
-	t = lo ? lo - 1 : 0;
+	t = lo - 1;
+	if ((r = top_entry(x, seg + t, e)) < 0)
+		return r;
 	*page = seg + t + 1;
-	*first_record = zw_rd32(slice + t * IDX_TOP);
+	*first_record = zw_rd32(e);
 	return ZW_OK;
 }
 
@@ -200,8 +224,8 @@ int idx_seek(idx_t *x, const char *q, idx_cursor_t *c)
 
 int idx_seek_number(idx_t *x, uint32_t n, idx_cursor_t *c)
 {
-	uint8_t slice[(IDX_STRIDE + 1) * IDX_TOP];
-	uint32_t lo = 0, hi = x->sum_count, seg, cnt, t, num, off;
+	uint8_t e[IDX_TOP];
+	uint32_t lo = 0, hi = x->ram_count, seg, cnt, t, num, off;
 	int r;
 
 	if (n >= x->records)
@@ -213,25 +237,26 @@ int idx_seek_number(idx_t *x, uint32_t n, idx_cursor_t *c)
 		else
 			hi = mid;
 	}
-	seg = lo ? (lo - 1) * IDX_STRIDE : 0;
+	seg = lo ? (lo - 1) * x->step : 0;
 	cnt = x->pages - seg;
-	if (cnt > IDX_STRIDE)
-		cnt = IDX_STRIDE;
-	if ((r = zw_io_read(&x->io, x->top_off + (uint64_t)seg * IDX_TOP, slice,
-			    cnt * IDX_TOP)) < 0)
-		return r;
-	lo = 0;
+	if (cnt > x->step)
+		cnt = x->step;
+	lo = 1;
 	hi = cnt;
 	while (lo < hi) {
 		uint32_t mid = (lo + hi) / 2;
-		if (zw_rd32(slice + mid * IDX_TOP) <= n)
+		if ((r = top_entry(x, seg + mid, e)) < 0)
+			return r;
+		if (zw_rd32(e) <= n)
 			lo = mid + 1;
 		else
 			hi = mid;
 	}
-	t = lo ? lo - 1 : 0;
+	t = lo - 1;
+	if ((r = top_entry(x, seg + t, e)) < 0)
+		return r;
 	c->page = seg + t + 1;
-	num = zw_rd32(slice + t * IDX_TOP);
+	num = zw_rd32(e);
 	if ((r = load_page(x, c->page)) < 0)
 		return r;
 	off = 0;

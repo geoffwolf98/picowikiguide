@@ -12,6 +12,12 @@
  *   shot FILE.pbm        save the screen
  *   restart              start the app again (state is kept on the card)
  *   idle                 a minute without keys (the app saves its state)
+ *   mem                  print the free memory and the largest free block
+ *                        (PWG_HEAP=BYTES: a heap like the PicoCalc's)
+ *   memmark              remember the free memory now
+ *   expectmem same       ... it must be the same now (no leak)
+ *   expectmem largest N  the largest free block must be N bytes or more
+ *   expectmem whole      all the free memory in one block (no holes)
  *   offin MS             a second goes by, MS before the idle switch-off
  *                        (-1: none)
  *   # comment
@@ -62,6 +68,7 @@ int main(int argc, char **argv)
 	FILE *f;
 	char line[1024], d[512];
 	int lineno = 0, fails = 0;
+	uint32_t mark = 0;
 	if (argc < 3) {
 		fprintf(stderr, "usage: pwg-headless CARD SCRIPT\n");
 		return 2;
@@ -121,6 +128,30 @@ int main(int argc, char **argv)
 			host_save_pbm(arg, screen);
 		} else if (strcmp(p, "restart") == 0) {
 			app_init();
+		} else if (strcmp(p, "mem") == 0) {
+			uint32_t fr, big;
+			if (plat_mem(&fr, &big) == 0)
+				printf("memory free %u, largest %u\n", fr, big);
+		} else if (strcmp(p, "memmark") == 0) {
+			uint32_t big;
+			plat_mem(&mark, &big);
+		} else if (strcmp(p, "expectmem") == 0) {
+			uint32_t fr = 0, big = 0;
+			int ok = 1;
+			if (plat_mem(&fr, &big) != 0) {
+				/* no heap emulation: nothing to check */
+			} else if (strcmp(arg, "same") == 0) {
+				ok = fr == mark;
+			} else if (strncmp(arg, "largest ", 8) == 0) {
+				ok = big >= (uint32_t)atol(arg + 8);
+			} else if (strcmp(arg, "whole") == 0) {
+				ok = big + 8 >= fr;
+			}
+			if (!ok) {
+				printf("FAIL line %d: expectmem %s: free %u (mark %u), largest %u\n",
+				       lineno, arg, fr, mark, big);
+				fails++;
+			}
 		} else if (strcmp(p, "idle") == 0) {
 			event(PE_IDLE);
 		} else if (strcmp(p, "offin") == 0) {
