@@ -38,8 +38,9 @@ add_executable(picowikiguide
 	${TOP}/src/blockdev.c ${TOP}/fonts/fonts.c ${TOP}/third_party/zstd/zstddeclib.c)
 target_include_directories(picowikiguide PRIVATE ${TOP}/third_party/zstd)
 target_compile_definitions(picowikiguide PRIVATE ZSTD_LEGACY_SUPPORT=0 ZSTD_DISABLE_ASM
-	ZSTD_NO_INLINE=1 PICO_STACK_SIZE=0x1000)
-target_link_libraries(picowikiguide pico_stdlib hardware_spi hardware_i2c)
+	ZSTD_NO_INLINE=1 PICO_STACK_SIZE=0x1000
+	PICO_MALLOC_PANIC=0)
+target_link_libraries(picowikiguide pico_stdlib hardware_spi hardware_i2c hardware_watchdog)
 pico_enable_stdio_usb(picowikiguide 0)
 pico_enable_stdio_uart(picowikiguide 0)
 pico_add_extra_outputs(picowikiguide)

@@ -1,0 +1,23 @@
+# a favourite reopens at the page you left it on (needs TOP100 second)
+key down enter
+type evolution
+key enter
+key *
+expect fav
+key down down down
+expect page=4/
+key f1 f1
+type charlie chaplin
+key enter
+expect article "Charlie Chaplin"
+key f2 tab
+expect favourites n=1
+key enter
+expect article "Evolution" page=4/
+key down down
+expect page=6/
+key f2 tab enter
+expect page=6/
+restart
+key f2 tab enter
+expect article "Evolution" page=6/

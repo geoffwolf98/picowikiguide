@@ -12,7 +12,8 @@
 #define SCREEN_H      320
 #define SCREEN_STRIDE 80	/* bytes per row: 2 bits a pixel */
 
-enum { WHITE = 0, BLACK = 1, INVERT = 2 };
+/* SHADE: a light grey background (pixels become at least the lightest grey) */
+enum { WHITE = 0, BLACK = 1, INVERT = 2, SHADE = 3 };
 
 /* blit a 1 bit bitmap (rows of ceil(w/8) bytes) */
 void gfx_blit(uint8_t *buf, int stride, int rows, int x, int y,

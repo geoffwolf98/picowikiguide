@@ -1,0 +1,26 @@
+# switching off on the search screen comes back to the search screen,
+# with the search as it was; switching off on an article comes back to it
+key down enter
+type evolution
+key enter
+key down down
+expect article "Evolution" page=3/
+key f1
+expect search "evolution"
+restart
+expect search "evolution"
+key enter
+expect article "Evolution"
+key down
+key f5
+restart
+expect article "Evolution"
+# another wiki (on the PicoCalc this restarts the device)
+key f5 w
+expect wikis
+key up enter
+expect search ""
+restart
+expect search ""
+key f5 w down enter
+expect search

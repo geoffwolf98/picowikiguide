@@ -35,6 +35,9 @@ int plat_keys_held(void);		/* a key held at start (safe mode) */
 uint32_t plat_ms(void);
 void plat_keepalive(void);		/* long work: feeds the watchdog */
 void plat_power_off(void);
+/* restart the device (state already saved); returns where there is
+ * no such thing (the PC) */
+void plat_restart(void);
 
 /* storage.  Paths are relative to the card root, 8.3 names:
  * "ENPEDIA/ENPEDIA.TOC" */

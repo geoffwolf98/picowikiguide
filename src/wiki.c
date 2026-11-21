@@ -383,10 +383,15 @@ void page_draw(const page_t *pg, uint8_t *fb, int y0, int focus)
 			if (it->slot == PI_NOLINK)
 				continue;
 			w = item_w(it);
-			if ((int)k >= fa && (int)k <= fb_)
-				gfx_fill(fb, SCREEN_STRIDE, SCREEN_H, it->x - 1, y, w + 2, ln->h, INVERT);
-			else
+			if ((int)k >= fa && (int)k <= fb_) {
+				/* the focused link: a box round it and a solid underline; the
+				 * text itself is untouched, so it stays sharp */
+				gfx_rect(fb, SCREEN_STRIDE, SCREEN_H, it->x - 3, y, w + 6, ln->h, BLACK);
+				gfx_rect(fb, SCREEN_STRIDE, SCREEN_H, it->x - 4, y - 1, w + 8, ln->h + 2, BLACK);
+				gfx_hline(fb, SCREEN_STRIDE, SCREEN_H, it->x, base + it->dy + 2, w, BLACK);
+			} else {
 				gfx_dotted(fb, SCREEN_STRIDE, SCREEN_H, it->x, base + it->dy + 2, w);
+			}
 		}
 		switch (ln->deco & 0x7f) {
 		case PD_BULLET:

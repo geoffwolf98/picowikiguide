@@ -13,6 +13,8 @@ static inline void plot(uint8_t *row, int x, int v, int colour)
 		nv = v > old ? v : old;		/* ink adds */
 	else if (colour == WHITE)
 		nv = 3 - v < old ? 3 - v : old;	/* white ink on dark */
+	else if (colour == SHADE)
+		nv = old > 1 ? old : 1;		/* light grey under */
 	else
 		nv = v ? 3 - old : old;		/* invert */
 	*d = (uint8_t)((*d & ~(3 << sh)) | (nv << sh));
@@ -73,7 +75,7 @@ void gfx_hline(uint8_t *buf, int stride, int rows, int x, int y, int w, int colo
 	if (w <= 0)
 		return;
 	row = buf + y * stride;
-	if (colour != INVERT) {
+	if (colour == BLACK || colour == WHITE) {
 		uint8_t full = colour == BLACK ? 0xff : 0x00;
 		/* ragged start, whole bytes, ragged end */
 		while (w > 0 && (x & 3)) {

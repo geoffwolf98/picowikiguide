@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.5.5 (21 Nov 2026): README fixes (UF2 Loader, make clean, card format).
+Version 0.5.8 (21 Nov 2026): switching wikis no longer crashes; switching off on the search screen comes back to it.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -55,7 +55,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.5.5.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.5.8.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -187,6 +187,18 @@ favourites and state.
 PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 
 ## Changes
+
+* 0.5.6: the focused link has a box round it and a solid underline
+  instead of being shown inverted (white on black blurred the smooth
+  text); a find match has a light grey background. Wikis from 0.5.x
+  still work.
+* 0.5.7: favourites and history remember the page you were on when you
+  leave an article, so they reopen where you left off.
+* 0.5.8: choosing another wiki restarts the PicoCalc straight into it
+  (no splash), so it opens with all the memory free, as at power-on;
+  this is meant to stop a crash going from TOP100 to ENPEDIA. Switched off on the
+  search screen, it starts on the search screen with the search as it
+  was. Out of memory now gives a message instead of stopping.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

@@ -144,6 +144,7 @@ uint32_t plat_ms(void)
 }
 
 void plat_keepalive(void) {}
+void plat_restart(void) {}
 
 /* the Unicode fallback font: fonts/WIKIFONT.BIN next to build/ (or the
  * path in PWG_WIKIFONT); kept for the whole run */

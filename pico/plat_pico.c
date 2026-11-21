@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "pico/stdlib.h"
+#include "hardware/watchdog.h"
 #include "zw.h"
 #include "plat.h"
 #include "app.h"
@@ -45,6 +46,16 @@ void plat_present(const uint8_t *fb) { lcd_present(fb); }
 uint32_t plat_ms(void) { return to_ms_since_boot(get_absolute_time()); }
 void plat_keepalive(void) {}
 void plat_power_off(void) { kbd_power_off(6); }
+
+/* a restart asked for by the app (another wiki): no 2 second splash */
+#define RESTART_MAGIC 0x50574752u	/* "PWGR" */
+void plat_restart(void)
+{
+	watchdog_hw->scratch[0] = RESTART_MAGIC;
+	watchdog_reboot(0, 0, 10);
+	for (;;)
+		tight_loop_contents();
+}
 
 /* ------------------------------------------------------------------ */
 /* keyboard */
@@ -203,16 +214,22 @@ int main(void)
 	uint32_t t0;
 	int code, state;
 	uint32_t shown;
+	int quick = watchdog_caused_reboot() && watchdog_hw->scratch[0] == RESTART_MAGIC;
+	watchdog_hw->scratch[0] = 0;
 	lcd_init();
-	splash_draw(fb);	/* DON'T PANIC, as early as possible */
-	lcd_present(fb);
+	if (quick) {
+		screen_message("Opening the wiki...", NULL);
+	} else {
+		splash_draw(fb);	/* DON'T PANIC, as early as possible */
+		lcd_present(fb);
+	}
 	shown = plat_ms();
 	kbd_init();
 	/* the Unicode fallback font, in flash */
 	font_set_fallback(wikifont_data, (uint32_t)(wikifont_end - wikifont_data));
 	/* a key held now: safe mode (do not reopen the last page) */
 	t0 = plat_ms();
-	while (plat_ms() - t0 < 300)
+	while (!quick && plat_ms() - t0 < 300)
 		if (kbd_read(&code, &state) && (state == KS_PRESSED || state == KS_HOLD) &&
 		    code != KC_SHL && code != KC_SHR)
 			held_at_start = 1;
@@ -230,7 +247,7 @@ int main(void)
 			sleep_ms(20);
 	}
 	/* leave the start-up screen up for at least 2 seconds */
-	while (plat_ms() - shown < 2000)
+	while (!quick && plat_ms() - shown < 2000)
 		sleep_ms(20);
 	last_key = plat_ms();
 	app_run();

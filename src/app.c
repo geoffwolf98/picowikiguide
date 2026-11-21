@@ -295,21 +295,44 @@ static void path_of(char *out, const char *ext)
 	strcat(out, ext);
 }
 
-static void save_state(void)
+/* reading an article (or a screen opened from one)?  If not, a restart
+ * goes back to the search screen rather than the last article */
+static int on_article(void)
+{
+	int s = A.screen;
+	if (s == S_HELP || s == S_CALC || s == S_MSG || s == S_LISTS)
+		s = A.prev_screen;
+	return A.have_art && (s == S_ARTICLE || s == S_SECTIONS);
+}
+
+/* PWGSTATE.DAT: u32 magic, name[16], u32 article, u16 page, u8 have
+ * article, u8 on search (since 0.5.8), double calc ans, u8 radians,
+ * query[64] at 48, u16 selected row at 112 */
+static void write_state(const char *name, int keep_art)
 {
 	uint8_t b[STATE_SIZE];
 	memset(b, 0, sizeof(b));
 	zw_wr32(b, STATE_MAGIC);
-	if (A.open)
-		memcpy(b + 4, A.name, 16);
-	if (A.have_art) {
+	if (name)
+		memcpy(b + 4, name, 16);
+	if (keep_art && A.have_art) {
 		zw_wr32(b + 20, A.art);
 		zw_wr16(b + 24, (uint16_t)A.page);
 		b[26] = 1;
+		b[27] = !on_article();
 	}
 	memcpy(b + 32, &A.calc_ans, sizeof(double));
 	b[40] = (uint8_t)A.calc_rad;
+	if (keep_art) {
+		memcpy(b + 48, A.query, QUERY_MAX);
+		zw_wr16(b + 112, (uint16_t)A.sel);
+	}
 	plat_save(STATE_FILE, b, sizeof(b));
+}
+
+static void save_state(void)
+{
+	write_state(A.open ? A.name : NULL, 1);
 }
 
 static void load_list(const char *ext, list_ent_t *e, int max, int *n)
@@ -506,10 +529,42 @@ static int load_page(uint32_t page)
 	return 0;
 }
 
+/* keep the page you are on in the article's History and Favourites
+ * entries (in memory; written by save_positions) */
+static int fav_dirty, hist_dirty;
+
+static void sync_position(void)
+{
+	int i;
+	if (!A.have_art)
+		return;
+	for (i = 0; i < A.nhist; ++i)
+		if (A.hist[i].art == A.art && A.hist[i].page != A.page) {
+			A.hist[i].page = (uint16_t)A.page;
+			hist_dirty = 1;
+		}
+	for (i = 0; i < A.nfav; ++i)
+		if (A.fav[i].art == A.art && A.fav[i].page != A.page) {
+			A.fav[i].page = (uint16_t)A.page;
+			fav_dirty = 1;
+		}
+}
+
+static void save_positions(void)
+{
+	sync_position();
+	if (hist_dirty)
+		save_list("HIS", A.hist, A.nhist);
+	if (fav_dirty)
+		save_list("FAV", A.fav, A.nfav);
+	hist_dirty = fav_dirty = 0;
+}
+
 static void remember(void)
 {
 	if (!A.have_art)
 		return;
+	sync_position();
 	list_front(A.hist, &A.nhist, HIST_MAX, A.art, (uint16_t)A.page, A.title);
 }
 
@@ -543,6 +598,9 @@ static int open_article(uint32_t art, uint32_t page, int push)
 	A.screen = S_ARTICLE;
 	list_front(A.hist, &A.nhist, HIST_MAX, art, (uint16_t)A.page, A.title);
 	save_list("HIS", A.hist, A.nhist);
+	if (fav_dirty)
+		save_list("FAV", A.fav, A.nfav);
+	hist_dirty = fav_dirty = 0;
 	save_state();
 	return 0;
 }
@@ -733,8 +791,13 @@ static void draw_article(void)
 		unsigned k;
 		for (k = A.hits[A.hit].first; k <= A.hits[A.hit].last; ++k) {
 			int x, y, w, h;
+			const page_item_t *it = &A.pg.items[k];
+			const page_line_t *ln = &A.pg.lines[it->line];
 			page_item_rect(&A.pg, k, &x, &y, &w, &h);
-			gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, x - 1, PAGE_TOP + y, w + 2, h, INVERT);
+			/* a find match: light grey behind black text (sharper than inverted) */
+			gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, x - 1, PAGE_TOP + y, w + 2, h, SHADE);
+			font_draw(A.fb, SCREEN_STRIDE, SCREEN_H, it->x, PAGE_TOP + ln->y + ln->base + it->dy,
+				  it->font, it->text, it->len, BLACK);
 		}
 	}
 	if (A.finding) {
@@ -1191,9 +1254,11 @@ static void random_article(void)
 
 void app_key(int key, int mods)
 {
+	/* the lists always know the page you are on */
+	if (A.screen == S_ARTICLE)
+		sync_position();
 	/* keys that work everywhere */
 	if (key == K_F1) {
-		/* pressed again on the search screen: clear the search */
 		/* pressed again on the search screen: clear the search; from
 		 * elsewhere: back to the list as it was (scrolled, selected) */
 		if (A.screen == S_SEARCH) {
@@ -1201,10 +1266,17 @@ void app_key(int key, int mods)
 			A.qcur = 0;
 			A.top_ok = 0;
 		}
+		if (A.open && A.screen != S_SEARCH && on_article()) {
+			A.screen = S_SEARCH;
+			save_state();	/* switched off now: back to search */
+		}
 		A.screen = A.open ? S_SEARCH : (A.nwikis ? S_WIKIS : S_MSG);
 		return;
 	}
 	if (key == K_F2 && A.open) {
+		save_positions();
+		if (A.screen != S_LISTS)
+			A.prev_screen = A.screen;
 		A.screen = S_LISTS;
 		A.list_sel = A.list_top = 0;
 		return;
@@ -1230,7 +1302,26 @@ void app_key(int key, int mods)
 		break;
 	case S_WIKIS:
 		list_keys(key, A.nwikis, &A.wiki_sel, &(int){ 0 });
-		if (key == K_ENTER && A.nwikis && open_wiki(A.wikis[A.wiki_sel]) == 0) {
+		if (key == K_ENTER && A.nwikis && A.open &&
+		    strcmp(A.wikis[A.wiki_sel], A.name) == 0) {
+			A.screen = S_SEARCH;	/* already open: its search */
+			save_state();
+		} else if (key == K_ENTER && A.nwikis && A.open) {
+			/* another wiki: restart with it, so that it opens on a
+			 * clean heap exactly as at power-on (a big wiki needs
+			 * nearly all the memory, in large blocks) */
+			save_positions();
+			write_state(A.wikis[A.wiki_sel], 0);
+			snprintf(A.msg, sizeof(A.msg), "Opening %s...", A.wiki_titles[A.wiki_sel]);
+			A.screen = S_MSG;
+			draw();
+			plat_restart();
+			/* no restart here (the PC): open it directly */
+			if (open_wiki(A.wikis[A.wiki_sel]) == 0) {
+				A.screen = S_SEARCH;
+				save_state();
+			}
+		} else if (key == K_ENTER && A.nwikis && open_wiki(A.wikis[A.wiki_sel]) == 0) {
 			A.screen = S_SEARCH;
 			save_state();
 		} else if (key == K_ESC && A.open) {
@@ -1317,8 +1408,20 @@ void app_init(void)
 			if (strcmp(A.wikis[i], name) == 0 && open_wiki(name) == 0) {
 				A.wiki_sel = i;
 				A.screen = S_SEARCH;
-				if (st[26] && zw_rd32(st + 20) < A.w.articles)
+				if (st[26] && zw_rd32(st + 20) < A.w.articles) {
 					open_article(zw_rd32(st + 20), zw_rd16(st + 24), 0);
+					if (st[27] && A.have_art)
+						A.screen = S_SEARCH;	/* was searching */
+				}
+				if (len >= 114 && st[48]) {
+					memcpy(A.query, st + 48, QUERY_MAX);
+					A.query[QUERY_MAX] = 0;
+					A.qcur = strlen(A.query);
+					A.top_ok = 0;
+					A.sel = zw_rd16(st + 112);
+					if (A.sel >= LIST_ROWS)
+						A.sel = 0;
+				}
 				break;
 			}
 	}
@@ -1349,8 +1452,10 @@ void app_event(const plat_event_t *e)
 			draw();
 		}
 	} else if (e->type == PE_IDLE) {
-		if (A.have_art)
+		if (A.open) {
 			save_state();
+			save_positions();
+		}
 	}
 }
 
