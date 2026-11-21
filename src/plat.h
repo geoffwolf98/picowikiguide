@@ -38,6 +38,11 @@ void plat_power_off(void);
 /* restart the device (state already saved); returns where there is
  * no such thing (the PC) */
 void plat_restart(void);
+/* ms until the idle switch-off, or -1 where there is none */
+int32_t plat_off_in(void);
+/* free memory in bytes, and the largest block that can be had; -1 where
+ * not known */
+int plat_mem(uint32_t *free_bytes, uint32_t *largest);
 
 /* storage.  Paths are relative to the card root, 8.3 names:
  * "ENPEDIA/ENPEDIA.TOC" */

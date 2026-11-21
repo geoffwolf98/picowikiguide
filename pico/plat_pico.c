@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <malloc.h>
+#include <unistd.h>
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
 #include "zw.h"
@@ -46,6 +48,39 @@ void plat_present(const uint8_t *fb) { lcd_present(fb); }
 uint32_t plat_ms(void) { return to_ms_since_boot(get_absolute_time()); }
 void plat_keepalive(void) {}
 void plat_power_off(void) { kbd_power_off(6); }
+
+static uint32_t last_key;
+
+int32_t plat_off_in(void)
+{
+	uint32_t idle = plat_ms() - last_key;
+	return idle >= OFF_MS ? 0 : (int32_t)(OFF_MS - idle);
+}
+
+/* the heap runs from the end of .bss up to __StackLimit */
+extern char __StackLimit;
+int plat_mem(uint32_t *free_bytes, uint32_t *largest)
+{
+	struct mallinfo m = mallinfo();
+	char *top = sbrk(0);
+	uint32_t tail = top && top != (char *)-1 && top < &__StackLimit ?
+			(uint32_t)(&__StackLimit - top) : 0;
+	uint32_t lo = 0, hi = (uint32_t)m.fordblks + tail;
+	*free_bytes = hi;
+	/* the largest block: try sizes (malloc only says yes or no) */
+	while (hi - lo > 256) {
+		uint32_t mid = lo + (hi - lo) / 2;
+		void *p = malloc(mid);
+		if (p) {
+			free(p);
+			lo = mid;
+		} else {
+			hi = mid;
+		}
+	}
+	*largest = lo;
+	return 0;
+}
 
 /* a restart asked for by the app (another wiki): no 2 second splash */
 #define RESTART_MAGIC 0x50574752u	/* "PWGR" */

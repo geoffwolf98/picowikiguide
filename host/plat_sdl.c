@@ -38,6 +38,7 @@ void plat_present(const uint8_t *fb)
 }
 
 int plat_keys_held(void) { return safe; }
+int32_t plat_off_in(void) { return -1; }
 void plat_power_off(void) {}
 
 static int map_key(SDL_Keycode k)

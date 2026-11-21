@@ -1,0 +1,25 @@
+# the idle save says so in the top bar; the idle switch-off counts down
+# in the last 10 seconds, and the key that stops it does nothing else
+key down enter
+type evolution
+key enter
+key down
+expect page=2/
+idle
+expect note="Saved position"
+key down
+expectnot note=
+expect page=3/
+offin 60000
+expectnot switchoff
+offin 9500
+expect switchoff=10
+offin 3200
+expect switchoff=4
+key down
+expectnot switchoff
+expect page=3/
+offin 300000
+expectnot switchoff
+key down
+expect page=4/

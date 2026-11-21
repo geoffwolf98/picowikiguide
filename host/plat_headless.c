@@ -11,6 +11,9 @@
  *   describe             print the screen description
  *   shot FILE.pbm        save the screen
  *   restart              start the app again (state is kept on the card)
+ *   idle                 a minute without keys (the app saves its state)
+ *   offin MS             a second goes by, MS before the idle switch-off
+ *                        (-1: none)
  *   # comment
  * PWG_HELD=1 in the environment: a key is held at start (safe mode).
  */
@@ -34,6 +37,16 @@ int plat_poll(plat_event_t *e) { e->type = PE_NONE; return 0; }
 int plat_wait(plat_event_t *e) { e->type = PE_QUIT; return 1; }
 int plat_keys_held(void) { return getenv("PWG_HELD") != NULL; }
 void plat_power_off(void) {}
+static int32_t off_in = -1;
+int32_t plat_off_in(void) { return off_in; }
+
+static void event(int type)
+{
+	plat_event_t e;
+	memset(&e, 0, sizeof(e));
+	e.type = type;
+	app_event(&e);
+}
 
 static void press(int key, int mods)
 {
@@ -108,6 +121,11 @@ int main(int argc, char **argv)
 			host_save_pbm(arg, screen);
 		} else if (strcmp(p, "restart") == 0) {
 			app_init();
+		} else if (strcmp(p, "idle") == 0) {
+			event(PE_IDLE);
+		} else if (strcmp(p, "offin") == 0) {
+			off_in = atoi(arg);
+			event(PE_TICK);
 		} else {
 			fprintf(stderr, "line %d: unknown command %s\n", lineno, p);
 			return 2;

@@ -2,6 +2,7 @@
  * PicoWikiGuide PC builds: key names, frame buffer to picture files
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <time.h>
@@ -145,6 +146,17 @@ uint32_t plat_ms(void)
 
 void plat_keepalive(void) {}
 void plat_restart(void) {}
+/* PWG_FAKEMEM=free,largest (bytes) to see the help screen line */
+int plat_mem(uint32_t *f, uint32_t *l)
+{
+	const char *s = getenv("PWG_FAKEMEM");
+	unsigned a, b;
+	if (!s || sscanf(s, "%u,%u", &a, &b) != 2)
+		return -1;
+	*f = a;
+	*l = b;
+	return 0;
+}
 
 /* the Unicode fallback font: fonts/WIKIFONT.BIN next to build/ (or the
  * path in PWG_WIKIFONT); kept for the whole run */

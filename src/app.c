@@ -110,6 +110,11 @@ static struct app {
 	/* "Press F5 for help" in the top bar for the first 10 seconds */
 	int hint_on;
 	uint32_t hint_t0;
+	/* a note in the top bar for 10 seconds ("Saved position") */
+	char note[40];
+	uint32_t note_t0;
+	/* seconds to the idle switch-off, shown for the last 10; 0 none */
+	int off_secs;
 
 	/* calculator */
 	char calc_in[CALC_MAX + 1];
@@ -163,8 +168,15 @@ static void text_fit(int x, int base, int font, const char *s, int w, int colour
 
 static void topbar(const char *left, const char *right)
 {
-	if (A.hint_on)
+	char cd[40];
+	if (A.off_secs) {
+		snprintf(cd, sizeof(cd), "Idle switch off in %d s", A.off_secs);
+		left = cd;
+	} else if (A.note[0]) {
+		left = A.note;
+	} else if (A.hint_on) {
 		left = "Press F5 for help";
+	}
 	int rw = right ? font_width(BAR_FONT, right, strlen(right)) : 0;
 	gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, 0, SCREEN_W, TOPBAR_H, BLACK);
 	text_fit(4, 13, BAR_FONT, left, SCREEN_W - 14 - rw, WHITE);
@@ -911,6 +923,15 @@ static void draw_help(void)
 		snprintf(s, sizeof(s), "%s, %u articles, %s", A.name, A.w.articles, A.w.date);
 		text_fit(6, y + 22, BAR_FONT, s, SCREEN_W - 12, BLACK);
 	}
+	{
+		uint32_t fr, big;
+		if (plat_mem(&fr, &big) == 0) {
+			int y = TOPBAR_H + 26 + (int)NELEM(lines) * 19 + 40;
+			snprintf(s, sizeof(s), "Memory free %u KB, largest block %u KB",
+				 (unsigned)(fr / 1024), (unsigned)(big / 1024));
+			text_fit(6, y + 4, BAR_FONT, s, SCREEN_W - 12, BLACK);
+		}
+	}
 	hint("Esc: back");
 }
 
@@ -1444,17 +1465,37 @@ void app_event(const plat_event_t *e)
 {
 	if (e->type == PE_KEY) {
 		A.hint_on = 0;
-		app_key(e->key, e->mods);
+		A.note[0] = 0;
+		if (A.off_secs) {
+			/* the key that stops the switch-off does nothing else */
+			A.off_secs = 0;
+		} else {
+			app_key(e->key, e->mods);
+		}
 		draw();
 	} else if (e->type == PE_TICK) {
+		int32_t off = plat_off_in();
+		int secs = off >= 0 && off <= 10000 ? (int)((off + 999) / 1000) : 0;
+		int changed = secs != A.off_secs;
+		A.off_secs = secs;
 		if (A.hint_on && plat_ms() - A.hint_t0 >= 10000) {
 			A.hint_on = 0;
-			draw();
+			changed = 1;
 		}
+		if (A.note[0] && plat_ms() - A.note_t0 >= 10000) {
+			A.note[0] = 0;
+			changed = 1;
+		}
+		if (changed)
+			draw();
 	} else if (e->type == PE_IDLE) {
 		if (A.open) {
 			save_state();
 			save_positions();
+			strcpy(A.note, A.have_art ? "Saved position" : "Saved");
+			A.note_t0 = plat_ms();
+			A.hint_on = 0;
+			draw();
 		}
 	}
 }
@@ -1523,5 +1564,13 @@ void app_describe(char *out, size_t cap)
 		break;
 	default:
 		snprintf(out, cap, "message \"%s\"", A.msg);
+	}
+	{
+		size_t n = strlen(out);
+		if (A.off_secs && n < cap)
+			snprintf(out + n, cap - n, " switchoff=%d", A.off_secs);
+		n = strlen(out);
+		if (A.note[0] && n < cap)
+			snprintf(out + n, cap - n, " note=\"%s\"", A.note);
 	}
 }

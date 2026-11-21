@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.5.8 (21 Nov 2026): switching wikis no longer crashes; switching off on the search screen comes back to it.
+Version 0.5.9 (21 Nov 2026): top bar notes for the idle save and switch-off, memory on the help screen.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -39,7 +39,9 @@ Version 0.5.8 (21 Nov 2026): switching wikis no longer crashes; switching off on
    held keys, such as F1, F5 and Up, to open its own menu).
 
 After 5 minutes without a key press it switches the PicoCalc off (the
-page you were on is saved after one minute, so it reopens there). With
+page you were on is saved after one minute, so it reopens there, and
+the top bar says "Saved position"). For the last 10 seconds the top bar
+counts down to the switch-off; any key stops it. With
 an older keyboard firmware that cannot switch off, the screen and its
 backlight go off instead and any key brings them back.
 
@@ -55,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.5.8.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.5.9.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -199,6 +201,11 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
   this is meant to stop a crash going from TOP100 to ENPEDIA. Switched off on the
   search screen, it starts on the search screen with the search as it
   was. Out of memory now gives a message instead of stopping.
+* 0.5.9: "Saved position" shows in the top bar for 10 seconds after the
+  idle save (a minute without keys); for the last 10 seconds before the
+  idle switch-off (5 minutes) the top bar counts down, and any key stops
+  it (that key does nothing else). The help screen (F5) shows the free
+  memory and the largest free block.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the
