@@ -11,12 +11,12 @@ ZSTD_FULL := $(wildcard third_party/zstd-full/common/*.c third_party/zstd-full/c
              third_party/zstd-full/decompress/*.c third_party/zstd-full/dictBuilder/*.c)
 XZ        := third_party/xz/xz_crc32.c third_party/xz/xz_dec_stream.c third_party/xz/xz_dec_lzma2.c
 PREP_SRC  := prep/zimprep.c prep/html.c prep/tex.c prep/zim.c prep/pic.c prep/layout.c \
-             src/fold.c src/index.c src/font.c src/gfx.c fonts/fonts.c host/hostio.c
+             src/fold.c src/index.c src/font.c src/inflate.c src/gfx.c fonts/fonts.c host/hostio.c
 PREP_INC  := -Isrc -Iprep -Ihost -Ifonts -Ithird_party/zstd-full -Ithird_party/xz
 
 # the app side (what runs on the PicoCalc), built for the PC
 DEC       := third_party/zstd/zstddeclib.c
-APP_CORE  := src/wiki.c src/index.c src/fold.c src/font.c src/gfx.c fonts/fonts.c
+APP_CORE  := src/wiki.c src/index.c src/fold.c src/font.c src/inflate.c src/gfx.c fonts/fonts.c
 APP_INC   := -Isrc -Ihost -Ifonts -Ipico -Ithird_party/zstd
 
 obj = $(patsubst %.c,$(BUILD)/$(2)/%.o,$(1))

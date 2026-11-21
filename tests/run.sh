@@ -15,6 +15,8 @@ for s in tests/scripts/*.txt; do
 		echo "FAIL $s"; cat /tmp/pwg-test.out; fail=1
 	fi
 done
+build/pagecat --font-fingerprint > /tmp/pwg-font.out && echo "ok   font fingerprint" ||
+	{ echo "FAIL font fingerprint"; cat /tmp/pwg-font.out; fail=1; }
 for w in "$CARD"/*/; do
 	n=$(basename "$w")
 	build/pagecat "$CARD/$n/$n" --check > /tmp/pwg-check.out || { echo "FAIL pagecat $n"; fail=1; }

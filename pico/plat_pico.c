@@ -228,11 +228,14 @@ int plat_keys_held(void)
 
 /* ------------------------------------------------------------------ */
 
-static uint8_t fb[SCREEN_STRIDE * SCREEN_H];
+/* messages and the splash draw into the app's frame buffer (no second
+ * 25 KB buffer; the app draws its whole screen again afterwards) */
+#define FB_SIZE (SCREEN_STRIDE * SCREEN_H)
 
 static void screen_message(const char *a, const char *b)
 {
-	memset(fb, 0, sizeof(fb));
+	uint8_t *fb = app_framebuffer();
+	memset(fb, 0, FB_SIZE);
 	gfx_fill(fb, SCREEN_STRIDE, SCREEN_H, 0, 0, SCREEN_W, TOPBAR_H, BLACK);
 	font_draw(fb, SCREEN_STRIDE, SCREEN_H, 4, 13, FONT_SMALLL, "PicoWikiGuide " PWG_VERSION,
 		  strlen("PicoWikiGuide " PWG_VERSION), WHITE);
@@ -255,8 +258,8 @@ int main(void)
 	if (quick) {
 		screen_message("Opening the wiki...", NULL);
 	} else {
-		splash_draw(fb);	/* DON'T PANIC, as early as possible */
-		lcd_present(fb);
+		splash_draw(app_framebuffer());	/* DON'T PANIC, as early as possible */
+		lcd_present(app_framebuffer());
 	}
 	shown = plat_ms();
 	kbd_init();

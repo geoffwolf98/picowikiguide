@@ -767,7 +767,8 @@ int main(int argc, char **argv)
 		n = ftell(ff);
 		fseek(ff, 0, SEEK_SET);
 		d = xmalloc((size_t)n);
-		if (fread(d, 1, (size_t)n, ff) != (size_t)n || font_set_fallback(d, (uint32_t)n) < 0)
+		if (fread(d, 1, (size_t)n, ff) != (size_t)n || font_set_fallback(d, (uint32_t)n) < 0 ||
+		    font_expand_fallback() < 0)	/* the threads share it: no block cache */
 			die("%s is not a usable font file", fp);
 		fclose(ff);
 	}

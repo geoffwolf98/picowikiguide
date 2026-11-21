@@ -5,7 +5,9 @@ Basic Multilingual Plane they lack (Devanagari, Arabic, Hebrew, Thai,
 Hangul, Georgian, Ethiopic, symbols...).
 
   mkwikifont.py BASE.bdf unifont.otf OUT.bdf
-  bdf2c.py --bin OUT.bdf WIKIFONT.BIN
+  bdf2c.py --bin OUT.bdf WIKIFONT-ZWFT.BIN
+  packwikifont.py WIKIFONT-ZWFT.BIN WIKIFONT.BIN      (compress)
+  PWG_WIKIFONT=WIKIFONT.BIN build/pagecat --font-fingerprint --patch
 
 unifont.otf comes with the fonts-unifont package (sudo apt install
 fonts-unifont: /usr/share/fonts/opentype/unifont/unifont.otf).  Unifont

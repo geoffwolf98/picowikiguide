@@ -1456,6 +1456,11 @@ void app_init(void)
 	draw();
 }
 
+uint8_t *app_framebuffer(void)
+{
+	return A.fb;
+}
+
 void app_redraw(void)
 {
 	draw();

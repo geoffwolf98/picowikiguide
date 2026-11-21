@@ -5,6 +5,10 @@
  * pagecat DIR/NAME --check                 decode every page of every
  *                                          article, report problems
  * pagecat DIR/NAME --sections "Title"      list an article's sections
+ * pagecat --font-fingerprint [--patch]     check (or fill in) the
+ *                                          fingerprint stored in a
+ *                                          compressed fallback font
+ *                                          (PWG_WIKIFONT=FILE for --patch)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +51,71 @@ static int find_title(const char *base, const char *title, uint32_t *art)
 	return 0;
 }
 
+/* every BMP character as the text font draws it */
+static uint32_t glyphs_hash(void)
+{
+	uint32_t h = 2166136261u, cp;
+	for (cp = 0; cp < 0x10000; ++cp) {
+		glyph_t g;
+		uint8_t m[6];
+		int i, n;
+		font_glyph(FONT_TEXTL, cp, &g);
+		m[0] = g.adv; m[1] = (uint8_t)g.xoff; m[2] = (uint8_t)g.top;
+		m[3] = g.w; m[4] = g.h; m[5] = g.bpp;
+		for (i = 0; i < 6; ++i)
+			h = (h ^ m[i]) * 16777619u;
+		n = ((g.w * g.bpp + 7) / 8) * g.h;
+		for (i = 0; i < n; ++i)
+			h = (h ^ g.bits[i]) * 16777619u;
+	}
+	return h;
+}
+
+/* the fingerprint a compressed font stores must be what the same font
+ * uncompressed gives (wikis made before the font was compressed keep
+ * working); work it out the slow way and compare, or write it in */
+static int font_fp(const char *argv0, int patch)
+{
+	uint32_t h0, sh0, sfinal, full, g0;
+	int fmt;
+	if (host_load_wikifont(argv0) < 0)
+		return 1;
+	fmt = font_fallback_info(&h0, &sh0, &sfinal);
+	g0 = glyphs_hash();	/* every character, the compressed way */
+	if (font_expand_fallback() < 0) {
+		fprintf(stderr, "the font does not inflate\n");
+		return 1;
+	}
+	full = font_fingerprint();
+	if (glyphs_hash() != g0) {
+		printf("the compressed font draws differently from the uncompressed one\n");
+		return 1;
+	}
+	printf("format ZWF%c, built-in fonts %08x, fingerprint %08x, stored %08x %08x\n",
+	       fmt == 2 ? '2' : 'T', h0, full, sh0, sfinal);
+	if (patch) {
+		const char *path = getenv("PWG_WIKIFONT");
+		uint8_t b[8];
+		FILE *f;
+		if (fmt != 2 || !path || !(f = fopen(path, "r+b"))) {
+			fprintf(stderr, "--patch needs PWG_WIKIFONT naming a ZWF2 font\n");
+			return 1;
+		}
+		zw_wr32(b, h0);
+		zw_wr32(b + 4, full);
+		fseek(f, 16, SEEK_SET);
+		if (fwrite(b, 1, 8, f) != 8 || fclose(f) != 0)
+			return 1;
+		printf("written\n");
+		return 0;
+	}
+	if (fmt == 2 && (sh0 != h0 || sfinal != full)) {
+		printf("the stored fingerprint is wrong (run with --patch)\n");
+		return 1;
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	host_files_t toc, data;
@@ -59,6 +128,9 @@ int main(int argc, char **argv)
 	uint32_t art, page = 0;
 	int focus = -1, r, ai, npos = 0;
 	const char *argv0 = argv[0];
+
+	if (argc >= 2 && strcmp(argv[1], "--font-fingerprint") == 0)
+		return font_fp(argv0, argc > 2 && strcmp(argv[2], "--patch") == 0);
 
 	for (ai = 1; ai < argc; ++ai) {
 		if (strcmp(argv[ai], "-o") == 0 && ai + 1 < argc)

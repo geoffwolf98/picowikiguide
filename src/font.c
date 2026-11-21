@@ -4,8 +4,21 @@
 #include "font.h"
 #include "gfx.h"
 #include "utf8.h"
+#include "inflate.h"
 
-static font_t fallback;
+static font_t fallback;		/* a ZWFT fallback font (uncompressed) */
+
+/* a ZWF2 fallback font (compressed blocks; see tools/packwikifont.py) */
+#define FB2_BLOCK_MAX 4096
+static struct {
+	const uint8_t *ranges, *offs, *data;
+	uint32_t count, nranges, nblocks, per, bits_total;
+	uint32_t fp_h0, fp_final;
+} fb2;
+static uint8_t fb2_blk[FB2_BLOCK_MAX];	/* the last block inflated */
+static uint32_t fb2_blk_no = 0xffffffffu;
+static uint8_t fb2_ring[8][32];		/* glyph bitmaps handed out */
+static unsigned fb2_ring_pos;
 /* the fallback font is loaded the first time a character needs it, so
  * start-up does not wait for it (most pages never do) */
 static int (*fallback_loader)(void);
@@ -17,9 +30,160 @@ void font_set_fallback_loader(int (*fn)(void))
 	fallback_tried = 0;
 }
 
+static int set_fb2(const uint8_t *data, uint32_t len)
+{
+	uint32_t n, nr, nb, per, hdr;
+	if (len < 32)
+		return ZW_EFORMAT;
+	n = zw_rd32(data + 4);
+	per = data[10];
+	nr = data[11];
+	nb = zw_rd32(data + 12);
+	hdr = 32 + nr * 8 + (nb + 1) * 4;
+	if (!n || n > 65536 || !per || per * (5 + 32) > FB2_BLOCK_MAX || nb != (n + per - 1) / per ||
+	    hdr > len || hdr + zw_rd32(data + 32 + nr * 8 + nb * 4) > len)
+		return ZW_EFORMAT;
+	memset(&fallback, 0, sizeof(fallback));
+	fb2.ranges = data + 32;
+	fb2.offs = data + 32 + nr * 8;
+	fb2.data = data + hdr;
+	fb2.count = n;
+	fb2.nranges = nr;
+	fb2.nblocks = nb;
+	fb2.per = per;
+	fb2.fp_h0 = zw_rd32(data + 16);
+	fb2.fp_final = zw_rd32(data + 20);
+	fb2.bits_total = zw_rd32(data + 24);
+	fb2_blk_no = 0xffffffffu;
+	return ZW_OK;
+}
+
+/* inflate block b into fb2_blk; returns its glyph count, or 0 */
+static uint32_t fb2_load(uint32_t b)
+{
+	uint32_t ng = fb2.count - b * fb2.per;
+	if (ng > fb2.per)
+		ng = fb2.per;
+	if (b != fb2_blk_no) {
+		uint32_t o = zw_rd32(fb2.offs + b * 4), e = zw_rd32(fb2.offs + b * 4 + 4);
+		fb2_blk_no = 0xffffffffu;
+		if (e < o || zw_inflate(fb2_blk, sizeof(fb2_blk), fb2.data + o, e - o) < (long)(ng * 5))
+			return 0;
+		fb2_blk_no = b;
+	}
+	return ng;
+}
+
+static int fb2_glyph(uint32_t cp, glyph_t *g)
+{
+	uint32_t lo = 0, hi = fb2.nranges, gi, b, k, ng, off, j, size;
+	const uint8_t *m;
+	if (cp > 0xffff)
+		return 0;
+	while (lo < hi) {	/* the last range starting at or before cp */
+		uint32_t mid = (lo + hi) / 2;
+		if (zw_rd16(fb2.ranges + mid * 8) <= cp)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	if (!lo)
+		return 0;
+	m = fb2.ranges + (lo - 1) * 8;
+	if (cp - zw_rd16(m) >= zw_rd16(m + 2))
+		return 0;
+	gi = zw_rd32(m + 4) + (cp - zw_rd16(m));
+	if (gi >= fb2.count)
+		return 0;
+	b = gi / fb2.per;
+	k = gi % fb2.per;
+	if (!(ng = fb2_load(b)))
+		return 0;
+	off = ng * 5;
+	for (j = 0; j < k; ++j)
+		off += (uint32_t)((fb2_blk[j * 5 + 3] + 7) / 8) * fb2_blk[j * 5 + 4];
+	m = fb2_blk + k * 5;
+	size = (uint32_t)((m[3] + 7) / 8) * m[4];
+	if (size > sizeof(fb2_ring[0]) || off + size > sizeof(fb2_blk))
+		return 0;
+	g->adv = m[0];
+	g->xoff = (int8_t)m[1];
+	g->top = (int8_t)m[2];
+	g->w = m[3];
+	g->h = m[4];
+	g->bpp = 1;
+	memcpy(fb2_ring[fb2_ring_pos], fb2_blk + off, size);
+	g->bits = fb2_ring[fb2_ring_pos];
+	fb2_ring_pos = (fb2_ring_pos + 1) % 8;
+	return 1;
+}
+
+int font_expand_fallback(void)
+{
+	uint8_t *d, *rec, *bits;
+	uint32_t b, gi = 0, r = 0, rcount = 0, cp = 0, boff = 0;
+	if (!fb2.count)
+		return fallback.count ? ZW_OK : ZW_EFORMAT;
+	d = zw_alloc(12 + fb2.count * GLYPH_REC + fb2.bits_total);
+	if (!d)
+		return ZW_ENOMEM;
+	memcpy(d, "ZWFT", 4);
+	zw_wr32(d + 4, fb2.count);
+	d[8] = fallback.ascent;
+	d[9] = fallback.descent;
+	d[10] = d[11] = 0;
+	rec = d + 12;
+	bits = rec + fb2.count * GLYPH_REC;
+	for (b = 0; b < fb2.nblocks; ++b) {
+		uint32_t ng = fb2_load(b), k, off;
+		if (!ng)
+			goto bad;
+		off = ng * 5;
+		for (k = 0; k < ng; ++k, ++gi) {
+			const uint8_t *m = fb2_blk + k * 5;
+			uint32_t size = (uint32_t)((m[3] + 7) / 8) * m[4];
+			while (!rcount) {	/* next code point range */
+				if (r >= fb2.nranges || zw_rd32(fb2.ranges + r * 8 + 4) != gi)
+					goto bad;
+				cp = zw_rd16(fb2.ranges + r * 8);
+				rcount = zw_rd16(fb2.ranges + r * 8 + 2);
+				r++;
+			}
+			if (off + size > sizeof(fb2_blk) || boff + size > fb2.bits_total)
+				goto bad;
+			zw_wr16(rec, (uint16_t)cp);
+			memcpy(rec + 2, m, 5);
+			rec[7] = 0;
+			zw_wr32(rec + 8, boff);
+			memcpy(bits + boff, fb2_blk + off, size);
+			rec += GLYPH_REC;
+			boff += size;
+			off += size;
+			cp++;
+			rcount--;
+		}
+	}
+	if (boff != fb2.bits_total)
+		goto bad;
+	memset(&fb2, 0, sizeof(fb2));
+	return font_set_fallback(d, 12 + gi * GLYPH_REC + boff);
+bad:
+	zw_free(d);
+	return ZW_EFORMAT;
+}
+
 int font_set_fallback(const uint8_t *data, uint32_t len)
 {
 	uint32_t n;
+	if (len >= 4 && memcmp(data, "ZWF2", 4) == 0) {
+		int r = set_fb2(data, len);
+		if (r == ZW_OK) {
+			fallback.ascent = data[8];
+			fallback.descent = data[9];
+		}
+		return r;
+	}
+	memset(&fb2, 0, sizeof(fb2));
 	if (len < 12 || memcmp(data, "ZWFT", 4) != 0)
 		return ZW_EFORMAT;
 	n = zw_rd32(data + 4);
@@ -207,7 +371,7 @@ void font_glyph(int fi, uint32_t cp, glyph_t *g)
 		fill(&fonts[FONT_MATH], r, g);
 		return;
 	}
-	if (!fallback.count && fallback_loader && !fallback_tried && cp >= 0x370 &&
+	if (!fallback.count && !fb2.count && fallback_loader && !fallback_tried && cp >= 0x370 &&
 	    !(cp >= 0x2000 && cp <= 0x200f) && cp != 0x202f && cp != 0xfeff &&
 	    !(cp >= 0xfe00 && cp <= 0xfe0f) && !(cp >= 0x202a && cp <= 0x202e) &&
 	    !(cp >= 0x2060 && cp <= 0x206f) && cp != 0x061c) {
@@ -218,6 +382,8 @@ void font_glyph(int fi, uint32_t cp, glyph_t *g)
 		fill(&fallback, r, g);
 		return;
 	}
+	if (fb2.count && fb2_glyph(cp, g))
+		return;
 	if (cp == 0xa0 || cp == 0x2009 || cp == 0x202f || cp == 0x2002 || cp == 0x2003) {
 		font_glyph(fi, ' ', g);
 		return;
@@ -308,10 +474,48 @@ int font_draw(uint8_t *buf, int stride, int rows, int x, int baseline,
 	return x;
 }
 
+static uint32_t builtin_hash(void);
+
 uint32_t font_fingerprint(void)
 {
-	/* FNV-1a over every font's metrics, glyph records and bitmaps: a
-	 * wiki laid out with other fonts would draw wrongly */
+	uint32_t h = builtin_hash();
+	/* a compressed fallback font carries its part, worked out when it
+	 * was made (pagecat --font-fingerprint --patch) from the same bytes
+	 * the uncompressed form hashes; it holds only for these built-in
+	 * fonts */
+	if (fb2.count && fb2.fp_final && fb2.fp_h0 == h)
+		return fb2.fp_final;
+	if (fb2.count && font_expand_fallback() != ZW_OK)
+		return h;
+	/* the Unicode fallback font too (it decides widths of other scripts) */
+	if (fallback.count) {
+		uint32_t i, nbits = 0;
+		for (i = 0; i < (uint32_t)fallback.count * GLYPH_REC; ++i)
+			h = (h ^ fallback.glyphs[i]) * 16777619u;
+		for (i = 0; i < fallback.count; ++i) {
+			const uint8_t *r = fallback.glyphs + i * GLYPH_REC;
+			uint32_t end = zw_rd32(r + 8) + (uint32_t)((r[5] + 7) / 8) * r[6];
+			if (end > nbits)
+				nbits = end;
+		}
+		for (i = 0; i < nbits; ++i)
+			h = (h ^ fallback.bits[i]) * 16777619u;
+	}
+	return h;
+}
+
+int font_fallback_info(uint32_t *h0, uint32_t *stored_h0, uint32_t *stored_final)
+{
+	*h0 = builtin_hash();
+	*stored_h0 = fb2.fp_h0;
+	*stored_final = fb2.fp_final;
+	return fb2.count ? 2 : fallback.count ? 1 : 0;
+}
+
+/* FNV-1a over every built-in font's metrics, glyph records and bitmaps:
+ * a wiki laid out with other fonts would draw wrongly */
+static uint32_t builtin_hash(void)
+{
 	uint32_t h = 2166136261u;
 	int f;
 	for (f = 0; f < FONT_COUNT; ++f) {
@@ -332,20 +536,6 @@ uint32_t font_fingerprint(void)
 		}
 		for (i = 0; i < nbits; ++i)
 			h = (h ^ ft->bits[i]) * 16777619u;
-	}
-	/* the Unicode fallback font too (it decides widths of other scripts) */
-	if (fallback.count) {
-		uint32_t i, nbits = 0;
-		for (i = 0; i < (uint32_t)fallback.count * GLYPH_REC; ++i)
-			h = (h ^ fallback.glyphs[i]) * 16777619u;
-		for (i = 0; i < fallback.count; ++i) {
-			const uint8_t *r = fallback.glyphs + i * GLYPH_REC;
-			uint32_t end = zw_rd32(r + 8) + (uint32_t)((r[5] + 7) / 8) * r[6];
-			if (end > nbits)
-				nbits = end;
-		}
-		for (i = 0; i < nbits; ++i)
-			h = (h ^ fallback.bits[i]) * 16777619u;
 	}
 	return h;
 }

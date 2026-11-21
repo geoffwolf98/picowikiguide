@@ -13,5 +13,6 @@ void app_event(const plat_event_t *e);
 void app_key(int key, int mods);
 void app_redraw(void);			/* draw the current screen again */
 void app_describe(char *out, size_t cap);	/* tests */
+uint8_t *app_framebuffer(void);		/* for platform messages */
 
 #endif

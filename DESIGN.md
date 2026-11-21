@@ -163,8 +163,20 @@ the line's y and height, and the text width (same font tables as zimprep).
 ### 4.3 Fonts
 
 Characters the 18 px fonts lack come from `fonts/WIKIFONT.BIN` (Gen2's
-Unicode fallback, 1 bit), which the firmware keeps in flash and zimprep
-loads for its widths; the fingerprint covers it.
+Unicode fallback, 1 bit, 57,313 glyphs), which the firmware keeps in
+flash and zimprep loads for its widths; the fingerprint covers it.
+
+The file is compressed (format ZWF2, see `tools/packwikifont.py`): 22
+code point ranges map a character to a glyph number; glyphs are in
+blocks of 96, each block their metrics (5 bytes) then their bitmaps,
+raw deflate. The device inflates one block into a 4 KB buffer
+(`src/inflate.c`, after puff) and copies the glyph out; 0.71 MB instead
+of 1.95 MB. zimprep inflates the whole font at start (its threads cannot
+share the block buffer). The fingerprint is the one the uncompressed
+(ZWFT) form gives; the font stores it, with the built-in fonts' hash it
+was worked out against, so the device need not inflate everything.
+`pagecat --font-fingerprint` checks both, and that every character
+draws the same both ways.
 
 
 zimprep and the firmware are built from the same `fonts/fonts.c`. The

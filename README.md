@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.5.9 (21 Nov 2026): top bar notes for the idle save and switch-off, memory on the help screen.
+Version 0.6.0 (21 Nov 2026): the Unicode font is compressed; the firmware is half the size.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.5.9.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.6.0.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -206,6 +206,12 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
   idle switch-off (5 minutes) the top bar counts down, and any key stops
   it (that key does nothing else). The help screen (F5) shows the free
   memory and the largest free block.
+* 0.6.0: the Unicode fallback font is compressed (1.95 MB to 0.71 MB, in
+  blocks of 96 glyphs, inflated when a character needs one), so the
+  firmware is 1.3 MB and the UF2 file 2.6 MB instead of 5 MB. Every
+  character is still there and draws the same; wikis do not need
+  preparing again (the font fingerprint is unchanged). About 18 KB more
+  memory is free (the splash and messages share the app's frame buffer).
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

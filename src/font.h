@@ -33,6 +33,12 @@ extern font_t fonts[];
 int font_set_fallback(const uint8_t *data, uint32_t len);
 /* or: call fn (which calls font_set_fallback) when first needed */
 void font_set_fallback_loader(int (*fn)(void));
+/* a compressed (ZWF2) fallback font: inflate all of it into memory as
+ * ZWFT (PC: zimprep's threads cannot share the one block cache) */
+int font_expand_fallback(void);
+/* fingerprint parts for checking a ZWF2 font: the built-in fonts' hash
+ * and the two values stored in the font; returns 2 (ZWF2), 1 (ZWFT), 0 */
+int font_fallback_info(uint32_t *h0, uint32_t *stored_h0, uint32_t *stored_final);
 
 /* glyph for cp in font f, trying the fallback chain; never fails
  * (unknown characters get a hollow box) */
