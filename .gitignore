@@ -4,3 +4,4 @@ build-pico/
 *.d
 pwg-shot-*.png
 *.uf2
+*.zip

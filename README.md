@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.5.4 (21 Nov 2026): F1 returns to the search list as you left it.
+Version 0.5.5 (21 Nov 2026): README fixes (UF2 Loader, make clean, card format).
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -17,14 +17,26 @@ Version 0.5.4 (21 Nov 2026): F1 returns to the search list as you left it.
 
 ## On the PicoCalc
 
-1. Make the card's files with zimprep (below) and copy them to the top
-   folder of a FAT32 SD card: each wiki folder (for example `TOP100`)
-   and `PWGSTATE.DAT`.
-2. Hold BOOTSEL on the Pico and plug it into the PC by USB. Copy
-   `picowikiguide-VERSION.uf2` to the `RP2350` drive that appears.
-3. It starts by itself. The keys are as in the table below; F1 to F5 are
-   the top row. Hold any key while it starts (Shift does not count) to
-   skip reopening the last page.
+1. Make the card's files with zimprep (below), or use the release's
+   `PicoWikiGuide-VERSION-card.zip`, and copy them to the top folder of
+   a FAT32 SD card: each wiki folder (for example `TOP100`) and
+   `PWGSTATE.DAT`. The card must be FAT32 (not exFAT), with an MBR
+   partition table; 32 KB clusters are best:
+   `sudo mkfs.vfat -F 32 -s 64 -n PICO /dev/sdX1` (check the device
+   name with `lsblk` first: this erases it).
+2. Install the firmware, one of two ways:
+   * **With pelrun's UF2 Loader** (a menu of apps on the SD card): copy
+     `picowikiguide-VERSION.uf2` into the card's `pico2-apps` folder and
+     choose it from the loader's menu. Other apps (WebMite and so on)
+     can sit beside it, so switching is a menu choice.
+   * **Directly:** hold BOOTSEL on the Pico and plug it into the PC by
+     USB, then copy `picowikiguide-VERSION.uf2` to the `RP2350` drive
+     that appears. This replaces whatever was on the Pico (including a
+     loader).
+3. It shows DON'T PANIC, then opens. The keys are as in the table
+   below; F1 to F5 are the top row. Hold a letter key while it starts
+   to skip reopening the last page (the UF2 Loader uses some other
+   held keys, such as F1, F5 and Up, to open its own menu).
 
 After 5 minutes without a key press it switches the PicoCalc off (the
 page you were on is saved after one minute, so it reopens there). With
@@ -43,10 +55,17 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.5.4.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.5.5.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
+make clean                          # always, after unpacking a new version
 make -j
+build/zimprep --version             # check it is the new version
 ```
+
+`make clean` matters when you unpack over an older copy: tar keeps the
+files' original dates, so without it `make` can keep stale object files
+from the old version and build a broken mix (zimprep then spins
+forever).
 
 This makes `build/zimprep`, `build/pagecat`, `build/pwg-headless`,
 `build/pwg-imgtest` and,
@@ -92,9 +111,10 @@ Each run writes `~/card/NAME/` (`NAME.TOC`, `NAME.P00`..., `NAME.IDX`,
 On the PicoCalc, the contents of `~/card` go in the top folder of a FAT32
 SD card.
 
-Wikis made by 0.1.0 still open, but run zimprep 0.2.0 once to get
-`PWGSTATE.DAT` (the app never creates files, so without it nothing is
-remembered between runs).
+`PWGSTATE.DAT` must be on the card: the app never creates files, so
+without it nothing is remembered between runs. zimprep makes it (once;
+an existing one is kept). Copy only the wiki folder when you update a
+wiki if you want the PicoCalc to keep its own history and state.
 
 ## Running the app on the PC
 
@@ -167,6 +187,11 @@ favourites and state.
 PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 
 ## Changes
+
+* 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
+  `make clean` after unpacking a new version, FAT32 card format, the
+  release's card zip. `.gitignore` leaves out `.uf2` files. No change to
+  the app or the card format.
 
 * 0.5.4: F1 from an article goes back to the search list where you left
   it (scrolled and selected), not to the top of the results. F1 on the
