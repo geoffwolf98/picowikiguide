@@ -265,7 +265,7 @@ int main(int argc, char **argv)
 		}
 	}
 	if (strcmp(argv[2], "--check") == 0) {
-		uint32_t bad = 0, pages = 0, maxlines = 0, maxitems = 0, maxlinks = 0;
+		uint32_t bad = 0, pages = 0, maxlines = 0, maxitems = 0, maxlinks = 0, headonly = 0;
 		for (art = 0; art < w.articles; ++art) {
 			if (wiki_article(&w, art, &a) < 0) {
 				bad++;
@@ -278,6 +278,17 @@ int main(int argc, char **argv)
 					bad++;
 					continue;
 				}
+				/* a page with only a heading on it (not the last) */
+				if (page + 1 < a.pages && !pg.npics && pg.nitems) {
+					unsigned it;
+					for (it = 0; it < pg.nitems; ++it)
+						if (pg.items[it].font != FONT_HEADINGL && pg.items[it].font != FONT_TITLEL)
+							break;
+					if (it == pg.nitems) {
+						if (headonly++ < 5)
+							fprintf(stderr, "article %u page %u: only a heading\n", art, page + 1);
+					}
+				}
 				if (pg.nlines > maxlines) maxlines = pg.nlines;
 				if (pg.nitems > maxitems) maxitems = pg.nitems;
 				if (pg.nlinks > maxlinks) maxlinks = pg.nlinks;
@@ -285,9 +296,11 @@ int main(int argc, char **argv)
 		}
 		printf("%u articles, %u pages, %u bad; most per page: %u lines, %u items, %u links\n",
 		       w.articles, pages, bad, maxlines, maxitems, maxlinks);
+		if (headonly)
+			printf("%u pages with only a heading\n", headonly);
 		printf("title \"%s\", name %s, language %s, date %s, main %u\n",
 		       w.title, w.name, w.lang, w.date, w.main);
-		return bad != 0;
+		return bad != 0 || headonly != 0;
 	}
 	if (strcmp(argv[2], "--sections") == 0 && argc > 3) {
 		static wiki_section_t s[1000];

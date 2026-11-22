@@ -338,11 +338,28 @@ static void do_article(worker_t *w, uint32_t art, art_out_t *o, int raw)
 			j = i + 1;	/* taller than a page: on its own */
 		/* never leave a heading at the bottom of a page, nor a picture
 		 * apart from its caption (it goes to the next page with it) */
-		if (j < l.nlines)
+		if (j < l.nlines) {
+			uint32_t j0 = j;
 			while (j - 1 > i && (heading_level(l.lines[j - 1].kind) ||
 					     l.lines[j - 1].kind == BK_TITLE || is_blank(&l.lines[j - 1]) ||
 					     (l.lines[j - 1].deco == LD_PIC && l.lines[j].kind == BK_PICCAP)))
 				j--;
+			/* but not down to a page of nothing but a heading (a heading
+			 * followed by a picture too tall to share the page): then the
+			 * whole heading stays here and the picture goes on */
+			for (k = i; k < j; ++k)
+				if (!heading_level(l.lines[k].kind) && l.lines[k].kind != BK_TITLE &&
+				    !is_blank(&l.lines[k]))
+					break;
+			if (k == j) {
+				j = i;
+				while (j < j0 && (heading_level(l.lines[j].kind) ||
+						  l.lines[j].kind == BK_TITLE || is_blank(&l.lines[j])))
+					j++;
+				if (j == i)
+					j = i + 1;
+			}
+		}
 		/* sections that start on this page */
 		for (k = i; k < j; ++k) {
 			const lay_line_t *ln = &l.lines[k];
