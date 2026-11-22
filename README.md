@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.7.2 (22 Nov 2026): less white space around pictures.
+Version 0.7.3 (22 Nov 2026): TOP100 comes with pictures; a zimprep hang fixed.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.7.2.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.7.3.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -96,7 +96,7 @@ A "card" is a folder laid out like the SD card: one folder per wiki, plus
 `PWGSTATE.DAT`. zimprep makes both:
 
 ```
-build/zimprep -n TOP100 wikipedia_en_100_2026-08.zim ~/card
+build/zimprep -n TOP100 --pictures all wikipedia_en_100_2026-08.zim ~/card
 build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
 ```
 
@@ -268,6 +268,11 @@ every title and prefixes of it with several index summary steps.
   empty for it; the note also shows in smaller gaps. TOP100P: 264 pages
   fewer, pages less than half full 823 to 479 (of 14,848). `pagecat
   --check` counts those. Remake picture wikis.
+* 0.7.3: zimprep could hang (rarely, at random) in the HTML parser: two
+  threads built its tag table at once and could link an entry to itself.
+  The tables are now built before the threads start. Wikis it finished
+  are fine. The card zip and the tests have one TOP100, with pictures
+  (no TOP100P).
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

@@ -9,6 +9,11 @@
   under a title).
 * Pictures: check the greys and the drawing speed on the device; tune
   the dithering if photos look too dark or too light.
-* A `maxi` ZIM build of English Wikipedia with `--pictures lead`.
+* `pagecat --article N` (by number), to look at the 23 pages with only a
+  heading in the ENPEDIA maxi build (e.g. articles 307851, 2608629,
+  2608630, 2812148, 2937398).
+* Pictures, option B: let text flow past a picture that does not fit, to
+  cut the 2.9% of pages less than half full (ENPEDIA maxi: 2.84 million
+  of 99.4 million).
 * Memory: work out the 64 KB gap between free memory and the largest
   block on the device (F5 now shows holes and top).

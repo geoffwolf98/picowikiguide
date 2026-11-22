@@ -71,6 +71,9 @@ typedef struct doc {
  * two (ZWSTATE.DAT byte 14); html only uses it to measure maths columns */
 #define HTML_LARGE 4
 void html_set_options(int opts);
+/* build the parser's lookup tables (html_set_options does it; call it
+ * before using the parser from several threads otherwise) */
+void html_tables(void);
 /* the pictures of the article about to be converted (NULL: none): an
  * <img> whose src hash is in the set becomes a BK_PIC block */
 void html_set_pictures(const pic_set_t *s);

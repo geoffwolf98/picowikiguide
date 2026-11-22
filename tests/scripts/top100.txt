@@ -7,21 +7,21 @@ expect article "Evolution" page=1/
 key L
 expect sections n=33
 key down down enter
-expect page=13/
+expect page=15/
 key shift+right
-expect page=18/
+expect page=22/
 key shift+left
-expect page=13/
+expect page=15/
 key end
-expect page=131/131
+expect page=156/156
 key home
 expect page=1/
 key /
 type darwin
 key enter
-expect hits=26 hit=1
+expect hits=28 hit=1
 key up
-expect hit=26
+expect hit=28
 key esc
 expectnot finding
 key f2

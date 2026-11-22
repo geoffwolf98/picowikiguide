@@ -1,6 +1,6 @@
-# a wiki with pictures (TOP100P: zimprep --pictures all on the TOP100 ZIM;
-# the third wiki on the test card)
-key down down enter
+# a wiki with pictures (TOP100: zimprep --pictures all;
+# the second wiki on the test card)
+key down enter
 expect search
 type elvis presley
 key enter

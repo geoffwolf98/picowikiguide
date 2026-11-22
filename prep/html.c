@@ -51,10 +51,20 @@ void html_set_pictures(const pic_set_t *s)
 	html_pics = s && s->n ? s : NULL;
 }
 
+static void tag_table(void);
+static void class_table(void);
+
 void html_set_options(int o)
 {
 	html_opts = o & (HTML_NOTES | HTML_CITES);
 	html_large = (o & HTML_LARGE) != 0;
+	html_tables();
+}
+
+void html_tables(void)
+{
+	class_table();
+	tag_table();
 }
 
 static const char *const skip_classes[] = {
@@ -72,6 +82,18 @@ static const char *const skip_classes[] = {
 	"pcs-collapse-table-collapsed-container", "pcs-edit-section-link-container",
 	NULL
 };
+
+/* their lengths, by html_tables() (before any threads) */
+static uint8_t skip_len[64];
+static uint8_t tags_ready;	/* html_tables() has run */
+
+static void class_table(void)
+{
+	int i;
+	for (i = 0; skip_classes[i] && i < 64; ++i)
+		skip_len[i] = (uint8_t)strlen(skip_classes[i]);
+}
+
 
 /* whole sections that are not worth the screen space */
 static const char *const skip_sections[] = {
@@ -726,13 +748,9 @@ static int skip_by_attrs(const attrs_t *a)
 	}
 	if (a->cls) {
 		/* each class word against the skip list, by length first */
-		static uint8_t slen[64], ready;
 		const char *c = a->cls, *end = a->cls + a->cls_len;
-		if (!ready) {
-			for (i = 0; skip_classes[i] && i < 64; ++i)
-				slen[i] = (uint8_t)strlen(skip_classes[i]);
-			ready = 1;
-		}
+		if (!tags_ready)
+			html_tables();
 		while (c < end) {
 			const char *w;
 			uint32_t n;
@@ -745,7 +763,7 @@ static int skip_by_attrs(const attrs_t *a)
 			if (!n)
 				continue;
 			for (i = 0; skip_classes[i] && i < 64; ++i)
-				if (slen[i] == n && w[0] == skip_classes[i][0] &&
+				if (skip_len[i] == n && w[0] == skip_classes[i][0] &&
 				    memcmp(w, skip_classes[i], n) == 0)
 					return html_pics && is_pic_box(w, n) ? 2 : 1;
 		}
@@ -1715,32 +1733,40 @@ static void close_tag(parser_t *p, int t)
 		p->kind = BK_PARA;
 }
 
+/* tags by first letter: a few compares instead of a strcmp against every
+ * known tag (this was the hottest function).  Built by html_tables(),
+ * before zimprep starts its threads: two threads building the chains at
+ * once could link an entry to itself, and lookups then never ended. */
+static uint8_t tag_first[27], tag_next[ZW_COUNT(tags)], tag_len[ZW_COUNT(tags)];
+
+static void tag_table(void)
+{
+	int k;
+	memset(tag_first, 0xff, sizeof(tag_first));
+	for (k = (int)ZW_COUNT(tags) - 1; k >= 0; --k) {
+		int c = tags[k].name[0] - 'a';
+		tag_len[k] = (uint8_t)strlen(tags[k].name);
+		tag_next[k] = tag_first[c];
+		tag_first[c] = (uint8_t)k;
+	}
+	tags_ready = 1;
+}
+
 static int lookup_tag(const char *s, uint32_t n)
 {
-	/* tags by first letter, built once: a few compares instead of a
-	 * strcmp against every known tag (this was the hottest function) */
-	static uint8_t first[27], next[ZW_COUNT(tags)], len[ZW_COUNT(tags)], ready;
 	char name[12];
 	uint32_t i;
 	int k;
-	if (!ready) {
-		memset(first, 0xff, sizeof(first));
-		for (k = (int)ZW_COUNT(tags) - 1; k >= 0; --k) {
-			int c = tags[k].name[0] - 'a';
-			len[k] = (uint8_t)strlen(tags[k].name);
-			next[k] = first[c];
-			first[c] = (uint8_t)k;
-		}
-		ready = 1;
-	}
+	if (!tags_ready)
+		html_tables();	/* single-threaded users */
 	if (n == 0 || n >= sizeof(name))
 		return T_OTHER;
 	for (i = 0; i < n; ++i)
 		name[i] = (char)(s[i] >= 'A' && s[i] <= 'Z' ? s[i] + 32 : s[i]);
 	if (name[0] < 'a' || name[0] > 'z')
 		return T_OTHER;
-	for (k = first[name[0] - 'a']; k != 0xff; k = next[k])
-		if (len[k] == n && memcmp(tags[k].name, name, n) == 0)
+	for (k = tag_first[name[0] - 'a']; k != 0xff; k = tag_next[k])
+		if (tag_len[k] == n && memcmp(tags[k].name, name, n) == 0)
 			return tags[k].tag;
 	return T_OTHER;
 }
