@@ -11,7 +11,7 @@
 # it read with the PicoCalc's own file code (IMG=0 to skip).
 set -e
 CARD=${CARD:?set CARD to the test card folder}
-export PWG_HEAP=${PWG_HEAP:-87800}
+export PWG_HEAP=${PWG_HEAP:-201568}
 fail=0
 run_scripts() {	# $1: program, $2: card or image, $3: label
 	for s in tests/scripts/*.txt; do
@@ -33,6 +33,8 @@ if [ "${IMG:-1}" = 1 ] && python3 -c "import pyfatfs" 2> /dev/null; then
 fi
 sh tests/reset-card.sh "$CARD"
 unset PWG_HEAP
+build/dicttest > /tmp/pwg-dict.out && echo "ok   dictionary flash copy" ||
+	{ echo "FAIL dictionary flash copy"; cat /tmp/pwg-dict.out; fail=1; }
 build/pagecat --font-fingerprint > /tmp/pwg-font.out && echo "ok   font fingerprint" ||
 	{ echo "FAIL font fingerprint"; cat /tmp/pwg-font.out; fail=1; }
 for w in "$CARD"/*/; do

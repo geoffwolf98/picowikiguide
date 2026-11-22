@@ -181,8 +181,18 @@ draws the same both ways.
 ### 4.4 Memory on the device
 
 The big buffers are fixed in .bss, not taken from the heap: the page
-frame (16 KB), the compressed frame (16.5 KB), the dictionary (112 KB
-at most), the zstd context (96 KB) and dictionary tables (28 KB). One
+frame (16 KB), the compressed frame (16.5 KB), the zstd context (96 KB)
+and dictionary tables (28 KB). The dictionary itself (112 KB at most)
+is only read once loaded, so the PicoCalc keeps it in flash
+(`pico/dictflash.c`, `src/dictsync.c`): the last 112 KB of the flash
+the firmware sees through QMI address translation window 0 (all 4 MB
+when flashed with BOOTSEL; the app partition from 8 KB under the UF2
+Loader; the same physical place either way). Opening a wiki compares
+the card's dictionary with the copy, through the compressed frame
+buffer, and erases and writes only the 4 KB sectors that differ (with
+the SDK's flash functions, interrupts off), so the same wiki writes
+nothing and a copy cut short is finished next time. zstd reads it from
+flash by reference. PC builds keep it in RAM. One
 wiki is open at a time. While no page is being read the compressed
 frame buffer is lent to the FAT code for walking cluster chains when a
 file is opened. The heap then holds only small things that live as

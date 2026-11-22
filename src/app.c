@@ -1417,6 +1417,17 @@ void app_key(int key, int mods)
 
 /* ------------------------------------------------------------------ */
 
+/* the PicoCalc copies a wiki's dictionary to flash when the wiki is not
+ * the one copied last: a second or so; say so meanwhile */
+static void dict_notice(void)
+{
+	int screen = A.screen;
+	snprintf(A.msg, sizeof(A.msg), "Setting up this wiki (only when you change wiki)...");
+	A.screen = S_MSG;
+	draw();
+	A.screen = screen;
+}
+
 void app_init(void)
 {
 	uint8_t *st = NULL;
@@ -1425,6 +1436,7 @@ void app_init(void)
 	if (A.open)	/* started again (tests): as after a power cut */
 		close_wiki();
 	memset(&A, 0, sizeof(A));
+	wiki_set_notice(dict_notice);
 	A.screen = S_WIKIS;
 	A.hint_on = 1;
 	A.hint_t0 = plat_ms();

@@ -21,10 +21,26 @@
 #define DDICT_WS  (28 * 1024)
 static uint8_t s_frame[FRAME_MAX];
 static uint8_t s_cbuf[CBUF_MAX];
+#ifdef PWG_DICT_IN_FLASH
+/* the PicoCalc keeps the dictionary in flash (pico/dictflash.c): it is
+ * only read once loaded, and that saves 112 KB of RAM */
+#include "dictflash.h"
+static void (*s_notice)(void);
+#else
 static uint8_t s_dict[DICT_MAX];
+#endif
 static uint64_t s_dctx[DCTX_WS / 8];
 static uint64_t s_ddict[DDICT_WS / 8];
 static wiki_t *s_open;		/* the wiki using them */
+
+void wiki_set_notice(void (*fn)(void))
+{
+#ifdef PWG_DICT_IN_FLASH
+	s_notice = fn;
+#else
+	(void)fn;
+#endif
+}
 
 uint8_t *wiki_scratch(uint32_t *len)
 {
@@ -99,10 +115,18 @@ int wiki_open(wiki_t *w, const zw_io_t *toc, const zw_io_t *data)
 	if (!w->dctx)
 		goto out;
 	if (w->dict_len) {
-		w->dict = s_dict;
 		r = ZW_EIO;
+#ifdef PWG_DICT_IN_FLASH
+		/* through the compressed frame buffer (free while opening) */
+		w->dict = (uint8_t *)dict_flash_place(toc, zw_rd32(h + TOC_H_DICT_OFF), w->dict_len,
+						      s_cbuf, sizeof(s_cbuf), s_notice);
+		if (!w->dict)
+			goto out;
+#else
+		w->dict = s_dict;
 		if (rd(toc, zw_rd32(h + TOC_H_DICT_OFF), w->dict, w->dict_len) < 0)
 			goto out;
+#endif
 		r = ZW_ENOMEM;
 		/* by reference: the dictionary is not copied again */
 		w->ddict = (void *)ZSTD_initStaticDDict(s_ddict, sizeof(s_ddict), w->dict, w->dict_len,

@@ -78,6 +78,9 @@ void wiki_close(wiki_t *w);
 /* a buffer the file system code may use while no page is being read
  * (the compressed frame buffer) */
 uint8_t *wiki_scratch(uint32_t *len);
+/* called before a wiki_open() that has to write the dictionary to flash
+ * (the PicoCalc; a second or so, only when the wiki changes) */
+void wiki_set_notice(void (*fn)(void));
 
 int wiki_article(wiki_t *w, uint32_t art, wiki_art_t *a);
 

@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.6.1 (21 Nov 2026): steadier memory, list selection like links, Tab/Del/8/F keys.
+Version 0.6.2 (22 Nov 2026): the wiki dictionary lives in flash; about 112 KB more free memory.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.6.1.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.6.2.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -191,7 +191,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=87800`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=201568`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -232,6 +232,12 @@ every title and prefixes of it with several index summary steps.
   History / Favourites tab get a box and underline like a focused link
   instead of being inverted. In an article Tab and Del go to the first
   and last page, 8 sets a favourite like *, and F finds like /.
+* 0.6.2: the wiki's compression dictionary (112 KB) is kept in the
+  Pico's flash instead of RAM: about 112 KB more free memory. It is
+  copied to the last 112 KB of the flash when you open a wiki that is
+  not the one copied last (a second or so, "Setting up this wiki"); the
+  same wiki again writes nothing. With the UF2 Loader this is the end of
+  its app partition, the same place.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

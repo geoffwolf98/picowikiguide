@@ -30,7 +30,7 @@ ifneq ($(SDL_LIBS),)
 APPS += $(BUILD)/pwg-sdl
 endif
 
-all: $(BUILD)/zimprep $(BUILD)/pagecat $(APPS)
+all: $(BUILD)/zimprep $(BUILD)/pagecat $(BUILD)/dicttest $(APPS)
 
 $(BUILD)/pwg-headless: $(call obj,host/plat_headless.c $(APP_SRC),app) $(call obj,$(DEC),dec)
 	$(CC) -o $@ $^ -lm
@@ -53,6 +53,9 @@ $(BUILD)/app/host/plat_sdl.o: host/plat_sdl.c
 	$(CC) $(CFLAGS) $(APP_INC) $(SDL_CFLAGS) -c $< -o $@
 
 $(BUILD)/pagecat: $(call obj,tests/pagecat.c $(APP_CORE) host/hostio.c host/heapemu.c host/plat_common.c,app) $(call obj,$(DEC),dec)
+	$(CC) -o $@ $^
+
+$(BUILD)/dicttest: $(call obj,tests/dicttest.c src/dictsync.c,app)
 	$(CC) -o $@ $^
 
 $(BUILD)/app/%.o: %.c
