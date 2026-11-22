@@ -32,6 +32,10 @@ static uint8_t s_dict[DICT_MAX];
 static uint64_t s_dctx[DCTX_WS / 8];
 static uint64_t s_ddict[DDICT_WS / 8];
 static wiki_t *s_open;		/* the wiki using them */
+/* the last picture drawn, decoded (2 bits a pixel) */
+static uint8_t s_pic[PIC_MAX_BYTES];
+static uint32_t s_pic_no = 0xffffffffu;
+static uint16_t s_pic_w, s_pic_h;
 
 void wiki_set_notice(void (*fn)(void))
 {
@@ -93,6 +97,7 @@ int wiki_open(wiki_t *w, const zw_io_t *toc, const zw_io_t *data)
 	w->sec_off = zw_rd32(h + TOC_H_SEC_OFF);
 	w->sec_len = zw_rd64(h + TOC_H_SEC_LEN);
 	w->data_len = zw_rd64(h + TOC_H_DATA_LEN);
+	w->pic_count = zw_rd32(h + TOC_H_PICS);
 	w->dict_len = zw_rd32(h + TOC_H_DICT_LEN);
 	copy_str(w->title, h + TOC_H_TITLE, TOC_H_TITLE_LEN);
 	copy_str(w->name, h + TOC_H_NAME, TOC_H_NAME_LEN);
@@ -142,11 +147,86 @@ out:
 	return r;
 }
 
+int wiki_set_pictures(wiki_t *w, const zw_io_t *io)
+{
+	uint8_t h[PIC_FILE_HDR];
+	if (zw_io_read(io, 0, h, sizeof(h)) < 0)
+		return ZW_EIO;
+	if (memcmp(h, "PWGI", 4) != 0 || zw_rd32(h + 4) != 1 || zw_rd32(h + 8) != w->pic_count)
+		return ZW_EFORMAT;	/* not this wiki's pictures */
+	w->pics = *io;
+	w->have_pics = 1;
+	if (s_open == w)
+		s_pic_no = 0xffffffffu;
+	return ZW_OK;
+}
+
+/* picture n into s_pic (kept: the same picture again reads nothing) */
+static int load_picture(wiki_t *w, uint32_t n)
+{
+	uint8_t e[8];
+	uint64_t off;
+	uint32_t len, size, dw, dh;
+	if (n == s_pic_no)
+		return ZW_OK;
+	s_pic_no = 0xffffffffu;
+	if (!w->have_pics || n >= w->pic_count)
+		return ZW_ERANGE;
+	if (zw_io_read(&w->pics, PIC_FILE_HDR + (uint64_t)n * 8, e, 8) < 0)
+		return ZW_EIO;
+	off = zw_rd32(e) | (uint64_t)e[4] << 32;
+	len = e[5] | (uint32_t)e[6] << 8 | (uint32_t)e[7] << 16;
+	if (len < 8)
+		return ZW_ENOTFOUND;	/* zimprep could not convert it */
+	/* the record: u16 w, u16 h, u8 format, 3 x 0, data (through the
+	 * compressed frame buffer, free outside wiki_page) */
+	if (zw_io_read(&w->pics, off, s_cbuf, 8) < 0)
+		return ZW_EIO;
+	dw = zw_rd16(s_cbuf);
+	dh = zw_rd16(s_cbuf + 2);
+	size = (uint32_t)((dw * 2 + 7) / 8) * dh;
+	if (!dw || !dh || size > sizeof(s_pic))
+		return ZW_EFORMAT;
+	if (s_cbuf[4] == 0) {
+		if (len - 8 != size || zw_io_read(&w->pics, off + 8, s_pic, size) < 0)
+			return ZW_EIO;
+	} else {
+		size_t r;
+		if (len > sizeof(s_cbuf) || zw_io_read(&w->pics, off, s_cbuf, len) < 0)
+			return ZW_EIO;
+		r = ZSTD_decompressDCtx(w->dctx, s_pic, size, s_cbuf + 8, len - 8);
+		if (ZSTD_isError(r) || r != size)
+			return ZW_EFORMAT;
+	}
+	s_pic_no = n;
+	s_pic_w = (uint16_t)dw;
+	s_pic_h = (uint16_t)dh;
+	return ZW_OK;
+}
+
+int wiki_picture_ok(wiki_t *w, const page_pic_t *pp)
+{
+	return load_picture(w, pp->number) == ZW_OK && s_pic_w == pp->w && s_pic_h == pp->h;
+}
+
+void wiki_draw_pictures(wiki_t *w, const page_t *pg, uint8_t *fb, int y0)
+{
+	unsigned i;
+	for (i = 0; i < pg->npics; ++i) {
+		const page_pic_t *pp = &pg->pics[i];
+		if (load_picture(w, pp->number) == ZW_OK && s_pic_w == pp->w && s_pic_h == pp->h)
+			gfx_blit2(fb, SCREEN_STRIDE, SCREEN_H, pp->x, y0 + pp->y, s_pic, pp->w, pp->h, BLACK);
+		else
+			gfx_rect(fb, SCREEN_STRIDE, SCREEN_H, pp->x, y0 + pp->y, pp->w, pp->h, BLACK);
+	}
+}
+
 void wiki_close(wiki_t *w)
 {
 	/* the buffers are fixed: nothing to free */
 	if (s_open == w)
 		s_open = NULL;
+	s_pic_no = 0xffffffffu;		/* another wiki's numbers */
 	memset(w, 0, sizeof(*w));
 	w->frame_no = TOC_NONE;
 }
@@ -219,7 +299,7 @@ static int varint(const uint8_t **p, const uint8_t *end, uint32_t *v)
 static int parse_page(const uint8_t *p, const uint8_t *end, page_t *pg)
 {
 	unsigned nl, i, k;
-	pg->nlines = pg->nitems = pg->nlinks = 0;
+	pg->nlines = pg->nitems = pg->nlinks = pg->npics = 0;
 	if (p >= end)
 		return ZW_EFORMAT;
 	nl = *p++;
@@ -256,6 +336,14 @@ static int parse_page(const uint8_t *p, const uint8_t *end, page_t *pg)
 			if (type >= PI_EXT) {	/* a later kind of item: skip it */
 				if (varint(&p, end, &len) < 0 || len > (uint32_t)(end - p))
 					return ZW_EFORMAT;
+				if (type == PI_PIC && len >= 10 && pg->npics < PAGE_MAX_PICS) {
+					page_pic_t *pp = &pg->pics[pg->npics++];
+					pp->x = (int16_t)zw_rd16(p);
+					pp->y = ln->y;
+					pp->w = zw_rd16(p + 2);
+					pp->h = zw_rd16(p + 4);
+					pp->number = zw_rd32(p + 6);
+				}
 				p += len;
 				continue;
 			}

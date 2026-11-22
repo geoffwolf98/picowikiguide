@@ -10,9 +10,10 @@ BUILD   := build
 ZSTD_FULL := $(wildcard third_party/zstd-full/common/*.c third_party/zstd-full/compress/*.c \
              third_party/zstd-full/decompress/*.c third_party/zstd-full/dictBuilder/*.c)
 XZ        := third_party/xz/xz_crc32.c third_party/xz/xz_dec_stream.c third_party/xz/xz_dec_lzma2.c
-PREP_SRC  := prep/zimprep.c prep/html.c prep/tex.c prep/zim.c prep/pic.c prep/layout.c \
+PREP_SRC  := prep/zimprep.c prep/pictures.c prep/html.c prep/tex.c prep/zim.c prep/pic.c prep/layout.c \
              src/fold.c src/index.c src/font.c src/inflate.c src/gfx.c fonts/fonts.c host/hostio.c host/heapemu.c
-PREP_INC  := -Isrc -Iprep -Ihost -Ifonts -Ithird_party/zstd-full -Ithird_party/xz
+PREP_INC  := -Isrc -Iprep -Ihost -Ifonts -Ithird_party/zstd-full -Ithird_party/xz \
+             -Ithird_party/libwebp -Ithird_party/stb
 
 # the app side (what runs on the PicoCalc), built for the PC
 DEC       := third_party/zstd/zstddeclib.c
@@ -66,8 +67,16 @@ $(BUILD)/dec/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -w -DZSTD_LEGACY_SUPPORT=0 -DZSTD_DISABLE_ASM -c $< -o $@
 
-$(BUILD)/zimprep: $(call obj,$(PREP_SRC),prep) $(call obj,$(ZSTD_FULL) $(XZ),lib)
-	$(CC) -o $@ $^ -lpthread
+# libwebp's decoder (zimprep --pictures)
+WEBP := $(wildcard third_party/libwebp/src/dec/*.c third_party/libwebp/src/dsp/*.c \
+                   third_party/libwebp/src/utils/*.c)
+
+$(BUILD)/zimprep: $(call obj,$(PREP_SRC),prep) $(call obj,$(ZSTD_FULL) $(XZ),lib) $(call obj,$(WEBP),webp)
+	$(CC) -o $@ $^ -lpthread -lm
+
+$(BUILD)/webp/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -w -Ithird_party/libwebp -c $< -o $@
 
 $(BUILD)/prep/%.o: %.c
 	@mkdir -p $(dir $@)

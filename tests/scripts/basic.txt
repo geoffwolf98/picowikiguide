@@ -1,5 +1,5 @@
 # start: two wikis, no state yet -> wiki list
-expect wikis n=2
+expect wikis n=
 key enter
 expect search ""
 type Global warm

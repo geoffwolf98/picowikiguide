@@ -256,6 +256,14 @@ int main(int argc, char **argv)
 		fprintf(stderr, "wiki_open: %d\n", r);
 		return 1;
 	}
+	if (w.pic_count) {	/* its pictures */
+		static host_files_t pics;
+		if (host_files_open_pieces(&pics, argv[1], 'I') < 0 ||
+		    wiki_set_pictures(&w, &pics.io) < 0) {
+			fprintf(stderr, "cannot open the pictures %s.I00\n", argv[1]);
+			return 1;
+		}
+	}
 	if (strcmp(argv[2], "--check") == 0) {
 		uint32_t bad = 0, pages = 0, maxlines = 0, maxitems = 0, maxlinks = 0;
 		for (art = 0; art < w.articles; ++art) {
@@ -324,6 +332,7 @@ int main(int argc, char **argv)
 			  FONT_SMALLL, s, n, WHITE);
 	}
 	page_draw(&pg, fb, PAGE_TOP, focus);
+	wiki_draw_pictures(&w, &pg, fb, PAGE_TOP);
 	fprintf(stderr, "page %u of %u: %u lines, %u items, %u links, %u sections in article\n",
 		page + 1, a.pages, pg.nlines, pg.nitems, pg.nlinks, a.sections);
 	if (host_save_pbm(out, fb) != 0) {

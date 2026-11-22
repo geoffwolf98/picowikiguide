@@ -47,6 +47,7 @@
 #include "zim.h"
 #include "doc.h"
 #include "layout.h"
+#include "pictures.h"
 #include "hostio.h"
 
 #define PIECE_SHIFT  31
@@ -182,14 +183,19 @@ static unsigned deco_code(const lay_line_t *ln)
 }
 
 /* encode lines [a, b) as one page (DESIGN.md 4.2) */
+/* with note: a last line, centred at the bottom, saying why the page
+ * ends early (the picture after it did not fit) */
+#define NOTE_PIC "\xe2\x96\xbc Picture on the next page \xe2\x96\xbc"
+#define NOTE_FONT FONT_SMALLL
+
 static void encode_page(buf_t *pg, const layout_t *l, const doc_t *d, const uint32_t *linkmap,
-			uint32_t a, uint32_t b)
+			uint32_t a, uint32_t b, const char *note)
 {
 	uint32_t slots[255];
 	unsigned nslots = 0, i;
 	int32_t top = l->lines[a].y;
 	pg->n = 0;
-	b_u8(pg, b - a);
+	b_u8(pg, b - a + (note != NULL));
 	for (i = a; i < b; ++i) {
 		const lay_line_t *ln = &l->lines[i];
 		unsigned deco = deco_code(ln), k, nitems = 0;
@@ -205,8 +211,22 @@ static void encode_page(buf_t *pg, const layout_t *l, const doc_t *d, const uint
 		for (k = 0; k < ln->nfrag; ++k)
 			if (l->frags[ln->first + k].len)
 				nitems++;
+		if (ln->deco == LD_PIC && ln->number < d->pics.n)
+			nitems++;
 		b_u8(pg, nitems > 255 ? 255 : nitems);
 		nitems = 0;
+		if (ln->deco == LD_PIC && ln->number < d->pics.n) {
+			/* a picture: x, w, h, its number in NAME.I00 */
+			unsigned pk = ln->number;
+			b_u8(pg, PI_PIC);
+			b_varint(pg, 10);
+			b_u16(pg, (uint16_t)ln->deco_x);
+			b_u16(pg, d->pics.w[pk]);
+			b_u16(pg, d->pics.h[pk]);
+			b_u16(pg, (uint16_t)d->pics.off[pk]);
+			b_u16(pg, (uint16_t)(d->pics.off[pk] >> 16));
+			nitems++;
+		}
 		for (k = 0; k < ln->nfrag && nitems < 255; ++k) {
 			const lay_frag_t *f = &l->frags[ln->first + k];
 			unsigned slot = PI_NOLINK, s;
@@ -230,6 +250,21 @@ static void encode_page(buf_t *pg, const layout_t *l, const doc_t *d, const uint
 			b_mem(pg, d->text + f->off, f->len);
 		}
 	}
+	if (note) {
+		size_t n = strlen(note);
+		int w = font_width(NOTE_FONT, note, n);
+		b_u16(pg, PAGE_H - 17);
+		b_u8(pg, 16);
+		b_u8(pg, 12);
+		b_u8(pg, PD_NONE);
+		b_u8(pg, 1);
+		b_u8(pg, NOTE_FONT);
+		b_u16(pg, (uint16_t)((PAGE_W - w) / 2));
+		b_u8(pg, 0);
+		b_u8(pg, PI_NOLINK);
+		b_varint(pg, (uint32_t)n);
+		b_mem(pg, note, n);
+	}
 	b_u8(pg, nslots);
 	for (i = 0; i < nslots; ++i)
 		b_varint(pg, slots[i]);
@@ -237,8 +272,10 @@ static void encode_page(buf_t *pg, const layout_t *l, const doc_t *d, const uint
 
 static int is_blank(const lay_line_t *ln)
 {
-	return ln->nfrag == 0 && (ln->deco == LD_NONE || ln->deco == LD_PIC);
+	return ln->nfrag == 0 && ln->deco == LD_NONE;	/* a picture line is not */
 }
+
+static int g_pics;		/* PICS_NONE, PICS_LEAD, PICS_ALL */
 
 /* lay out article number `art` and turn it into frames.  With raw set,
  * the frames are left uncompressed (dictionary samples). */
@@ -251,6 +288,7 @@ static void do_article(worker_t *w, uint32_t art, art_out_t *o, int raw)
 	doc_t d;
 	layout_t l;
 	buf_t pg = { 0 }, fr = { 0 };
+	pic_set_t ps;
 
 	memset(o, 0, sizeof(*o));
 	if (zim_dirent(z, g_arts[art], &de) < 0 || zim_blob(z, de.cluster, de.blob, &p, &len) < 0) {
@@ -258,6 +296,10 @@ static void do_article(worker_t *w, uint32_t art, art_out_t *o, int raw)
 		return;
 	}
 	doc_init(&d);
+	if (g_pics) {
+		pictures_for(g_arts[art], &ps);
+		html_set_pictures(&ps);	/* this thread's; read until the doc is made */
+	}
 	if (html_to_doc(&d, (const char *)p, len, de.ns, de.url, z->content_ns == 'C') < 0 ||
 	    lay_build(&l, &d) < 0) {
 		doc_free(&d);
@@ -294,10 +336,12 @@ static void do_article(worker_t *w, uint32_t art, art_out_t *o, int raw)
 			j++;
 		if (j == i)
 			j = i + 1;	/* taller than a page: on its own */
-		/* never leave a heading at the bottom of a page */
+		/* never leave a heading at the bottom of a page, nor a picture
+		 * apart from its caption (it goes to the next page with it) */
 		if (j < l.nlines)
 			while (j - 1 > i && (heading_level(l.lines[j - 1].kind) ||
-					     l.lines[j - 1].kind == BK_TITLE || is_blank(&l.lines[j - 1])))
+					     l.lines[j - 1].kind == BK_TITLE || is_blank(&l.lines[j - 1]) ||
+					     (l.lines[j - 1].deco == LD_PIC && l.lines[j].kind == BK_PICCAP)))
 				j--;
 		/* sections that start on this page */
 		for (k = i; k < j; ++k) {
@@ -329,7 +373,14 @@ static void do_article(worker_t *w, uint32_t art, art_out_t *o, int raw)
 				hb++;
 			}
 		}
-		encode_page(&pg, &l, &d, linkmap, i, j);
+		{
+			/* ended early for a picture that did not fit: say so */
+			const char *note = NULL;
+			if (j < l.nlines && j > i && l.lines[j].deco == LD_PIC &&
+			    PAGE_H - (l.lines[j - 1].y + l.lines[j - 1].h - top) >= 40)
+				note = NOTE_PIC;
+			encode_page(&pg, &l, &d, linkmap, i, j, note);
+		}
 		/* frame: one page */
 		fr.n = 0;
 		b_u8(&fr, 1);
@@ -720,6 +771,13 @@ int main(int argc, char **argv)
 			dict_kb = atoi(argv[++a]);
 		else if (strcmp(argv[a], "--font") == 0 && a + 1 < argc)
 			font_path = argv[++a];
+		else if (strcmp(argv[a], "--pictures") == 0 && a + 1 < argc) {
+			const char *m = argv[++a];
+			g_pics = !strcmp(m, "none") ? PICS_NONE : !strcmp(m, "lead") ? PICS_LEAD :
+				 !strcmp(m, "all") ? PICS_ALL : -1;
+			if (g_pics < 0)
+				die("--pictures takes none, lead or all, not %s", m);
+		}
 		else if (argv[a][0] == '-')
 			die("unknown option %s", argv[a]);
 		else if (!input)
@@ -731,7 +789,7 @@ int main(int argc, char **argv)
 	}
 	if (!input || !outdir) {
 		fprintf(stderr, "usage: zimprep [-n NAME] [--threads N] [--level N] [--dict-kb N] "
-			"INPUT.zim OUTDIR\n");
+			"[--pictures none|lead|all] INPUT.zim OUTDIR\n");
 		return 2;
 	}
 	if (!name[0])
@@ -774,7 +832,7 @@ int main(int argc, char **argv)
 	}
 	html_set_options(HTML_LARGE);	/* no footnotes, no citations */
 	lay_set_large(1);
-	lay_set_pictures(0);
+	lay_set_pictures(g_pics != PICS_NONE);
 	/* build the font's lazily made bracket pieces before the threads */
 	font_glyph(FONT_TEXT, FONT_PIECE, &gw);
 	font_glyph(FONT_TEXTL, FONT_PIECE, &gw);
@@ -818,6 +876,10 @@ int main(int argc, char **argv)
 			main_art = g_entry2art[fin];
 	}
 	fprintf(stderr, "%s: %u articles, %zu titles, %d threads\n", input, g_narts, nrec, g_nthreads);
+
+	/* pictures first: the layout needs their sizes */
+	if (pictures_make(&g_zim, input, g_base, g_pics, g_nthreads) < 0)
+		die("could not make the pictures%s", "");
 
 	/* workers */
 	g_w = xmalloc(g_nthreads * sizeof(worker_t));
@@ -988,6 +1050,7 @@ int main(int argc, char **argv)
 		if (zim_metadata(&g_zim, "Date", meta, sizeof(meta)) == 0)
 			strncpy((char *)hdr + TOC_H_DATE, meta, TOC_H_DATE_LEN - 1);
 		memcpy(hdr + TOC_H_UUID, g_zim.uuid, 16);
+		zw_wr32(hdr + TOC_H_PICS, g_pics ? pictures_count() : 0);
 
 		snprintf(path, sizeof(path), "%s.TOC", g_base);
 		if (!(f = fopen(path, "wb")))

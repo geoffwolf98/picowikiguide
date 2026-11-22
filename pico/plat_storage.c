@@ -95,7 +95,7 @@ int plat_open(const char *path, zw_io_t *io)
 	return 0;
 }
 
-int plat_open_pieces(const char *base, zw_io_t *io)
+int plat_open_pieces(const char *base, char kind, zw_io_t *io)
 {
 	char path[48];
 	int n = 0, i;
@@ -103,7 +103,7 @@ int plat_open_pieces(const char *base, zw_io_t *io)
 	fat_file_t t;
 	/* count the pieces */
 	for (n = 0; n < MAX_PIECES; ++n) {
-		snprintf(path, sizeof(path), "%s.P%02d", base, n);
+		snprintf(path, sizeof(path), "%s.%c%02d", base, kind, n);
 		if (fat_lookup(&vol, path, &t) < 0)
 			break;
 	}
@@ -112,7 +112,7 @@ int plat_open_pieces(const char *base, zw_io_t *io)
 	p->shift = 31;
 	io->size = 0;
 	for (i = 0; i < n; ++i) {
-		snprintf(path, sizeof(path), "%s.P%02d", base, i);
+		snprintf(path, sizeof(path), "%s.%c%02d", base, kind, i);
 		if (open_one(path, &p->f[i]) < 0) {
 			pf_free(p);
 			return ZW_EIO;

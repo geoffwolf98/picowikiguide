@@ -31,6 +31,9 @@ typedef struct wiki {
 	uint8_t *frame;		/* the decompressed frame (FRAME_MAX) */
 	uint32_t frame_no;	/* frame in `frame`, TOC_NONE: none */
 	uint32_t frame_len;
+	uint32_t pic_count;	/* pictures in NAME.I00 ... (TOC header), 0: none */
+	zw_io_t pics;		/* NAME.I00 ..., once wiki_set_pictures is called */
+	int have_pics;
 } wiki_t;
 
 typedef struct wiki_art {
@@ -58,8 +61,18 @@ typedef struct page_line {
 	uint16_t first, nitems;	/* items */
 } page_line_t;
 
+#define PAGE_MAX_PICS 8
+
+typedef struct page_pic {
+	int16_t x, y;		/* y: from the top of the body area */
+	uint16_t w, h;
+	uint32_t number;
+} page_pic_t;
+
 typedef struct page {
 	page_line_t lines[PAGE_MAX_LINES];
+	page_pic_t pics[PAGE_MAX_PICS];
+	uint16_t npics;
 	page_item_t items[PAGE_MAX_ITEMS];
 	uint32_t links[PAGE_MAX_LINKS];
 	uint16_t nlines, nitems, nlinks;
@@ -78,6 +91,14 @@ void wiki_close(wiki_t *w);
 /* a buffer the file system code may use while no page is being read
  * (the compressed frame buffer) */
 uint8_t *wiki_scratch(uint32_t *len);
+/* the wiki's pictures (NAME.I00 ..., opened by the platform when
+ * w->pic_count is not 0); checks the file's header */
+int wiki_set_pictures(wiki_t *w, const zw_io_t *io);
+/* draw the page's pictures (after page_draw); a picture that cannot be
+ * read is drawn as an outline */
+void wiki_draw_pictures(wiki_t *w, const page_t *pg, uint8_t *fb, int y0);
+/* 1 if the picture can be read and is the size the page says (tests) */
+int wiki_picture_ok(wiki_t *w, const page_pic_t *pp);
 /* called before a wiki_open() that has to write the dictionary to flash
  * (the PicoCalc; a second or so, only when the wiki changes) */
 void wiki_set_notice(void (*fn)(void));

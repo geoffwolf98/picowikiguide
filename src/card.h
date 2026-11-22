@@ -32,7 +32,7 @@ enum {
 	TOC_H_DICT_LEN = 48, TOC_H_ART_OFF = 52, TOC_H_FRAME_OFF = 56,
 	TOC_H_SEC_OFF = 60, TOC_H_SEC_LEN = 64, TOC_H_DATA_LEN = 72,
 	TOC_H_PREP = 80, TOC_H_TITLE = 96, TOC_H_LANG = 224, TOC_H_NAME = 240,
-	TOC_H_DATE = 256, TOC_H_UUID = 272,
+	TOC_H_DATE = 256, TOC_H_UUID = 272, TOC_H_PICS = 288,
 	TOC_H_PREP_LEN = 16, TOC_H_TITLE_LEN = 128, TOC_H_LANG_LEN = 16,
 	TOC_H_NAME_LEN = 16, TOC_H_DATE_LEN = 16,
 };
@@ -53,6 +53,12 @@ enum { PD_NONE, PD_BULLET, PD_NUMBER, PD_RULE, PD_HEAD_RULE };
 #define PD_QUOTE         0x80
 
 #define PI_EXT           0x80	/* item types >= this are skipped by v1 */
+#define PI_PIC           0x81	/* a picture: i16 x, u16 w, u16 h, u32 number */
+
+/* pictures (NAME.I00 ...; DESIGN.md 4.5) */
+#define PIC_FILE_HDR     64	/* "PWGI", u32 version, u32 count, ... */
+#define PIC_MAX_BYTES    (((311 * 2 + 7) / 8) * 255)	/* the largest, 2 bits a pixel */
+#define PIC_ZMAX         16000	/* compressed records are at most this (+ 8) */
 #define PI_NOLINK        0xff
 
 #define FRAME_MAX        16384	/* largest decompressed frame */

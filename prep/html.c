@@ -43,7 +43,8 @@ static int tag_void(int t)
 static int html_opts;	/* HTML_NOTES, HTML_CITES (tested as a whole) */
 static int html_large;	/* HTML_LARGE: maths columns measured large */
 
-static const pic_set_t *html_pics;	/* NULL or n = 0: no pictures */
+static __thread const pic_set_t *html_pics;	/* NULL or n = 0: no pictures (per thread:
+						   zimprep lays out on several) */
 
 void html_set_pictures(const pic_set_t *s)
 {

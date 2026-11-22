@@ -176,3 +176,17 @@ void heapemu_stats(uint32_t *free_bytes, uint32_t *largest)
 	*free_bytes = (uint32_t)fr;
 	*largest = (uint32_t)big;
 }
+
+void heapemu_split(uint32_t *holes, uint32_t *topfree)
+{
+	size_t off = 0, h = 0;
+	while (off < top) {
+		chunk_t *c = at(off);
+		size_t sz = c->size & ~1u;
+		if (!(c->size & 1))
+			h += sz;
+		off += sz;
+	}
+	*holes = (uint32_t)h;
+	*topfree = (uint32_t)(arena_len - top);
+}

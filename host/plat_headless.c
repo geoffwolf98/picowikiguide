@@ -130,8 +130,12 @@ int main(int argc, char **argv)
 			app_init();
 		} else if (strcmp(p, "mem") == 0) {
 			uint32_t fr, big;
-			if (plat_mem(&fr, &big) == 0)
-				printf("memory free %u, largest %u\n", fr, big);
+			uint32_t holes = 0, top = 0;
+			if (plat_mem(&fr, &big) == 0) {
+				plat_mem_split(&holes, &top);
+				printf("memory free %u, largest %u (holes %u, top %u)\n",
+				       fr, big, holes, top);
+			}
 		} else if (strcmp(p, "memmark") == 0) {
 			uint32_t big;
 			plat_mem(&mark, &big);

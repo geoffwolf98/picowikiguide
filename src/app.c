@@ -68,7 +68,7 @@ static struct app {
 	/* the open wiki */
 	int open;
 	char name[16];
-	zw_io_t io_toc, io_data, io_idx;
+	zw_io_t io_toc, io_data, io_idx, io_pics;
 	wiki_t w;
 	idx_t idx;
 
@@ -441,6 +441,7 @@ static void close_wiki(void)
 	plat_close(&A.io_toc);
 	plat_close(&A.io_data);
 	plat_close(&A.io_idx);
+	plat_close(&A.io_pics);
 	A.open = 0;
 	A.have_art = 0;
 	A.nback = 0;
@@ -479,7 +480,7 @@ static int open_wiki(const char *name)
 		return -1;
 	}
 	snprintf(path, sizeof(path), "%s/%s", name, name);
-	if (plat_open_pieces(path, &A.io_data) < 0) {
+	if (plat_open_pieces(path, 'P', &A.io_data) < 0) {
 		plat_close(&A.io_toc);
 		message("Cannot open the wiki's page files (.P00).");
 		return -1;
@@ -502,6 +503,13 @@ static int open_wiki(const char *name)
 			r == ZW_ENOMEM ? "Not enough memory to open this wiki." :
 			"This wiki's files are damaged or incomplete.");
 		return -1;
+	}
+	/* pictures, when it has them (without the files: outlines) */
+	if (A.w.pic_count) {
+		snprintf(path, sizeof(path), "%s/%s", name, name);
+		if (plat_open_pieces(path, 'I', &A.io_pics) == 0 &&
+		    wiki_set_pictures(&A.w, &A.io_pics) < 0)
+			plat_close(&A.io_pics);
 	}
 	A.open = 1;
 	load_list("HIS", A.hist, HIST_MAX, &A.nhist);
@@ -811,6 +819,7 @@ static void draw_article(void)
 	snprintf(r, sizeof(r), "%s%u / %u", is_fav(A.art) ? "* " : "", A.page + 1, A.a.pages);
 	topbar(A.title, r);
 	page_draw(&A.pg, A.fb, PAGE_TOP, A.focus);
+	wiki_draw_pictures(&A.w, &A.pg, A.fb, PAGE_TOP);
 	if (A.finding && A.hit >= 0 && A.hits[A.hit].page == A.page) {
 		unsigned k;
 		for (k = A.hits[A.hit].first; k <= A.hits[A.hit].last; ++k) {
@@ -915,7 +924,7 @@ static void draw_help(void)
 	static const char *const lines[] = {
 		"F1 Search   F2 History   F3 Random",
 		"F4 Calculator   F5 This help",
-		"Up/Down  previous / next page",
+		"Up/Down  previous / next page  Space next",
 		"Shift+Up/Down  previous / next section",
 		"Left/Right  previous / next link",
 		"Enter  follow link    Esc  back",
@@ -940,9 +949,15 @@ static void draw_help(void)
 		uint32_t fr, big;
 		if (plat_mem(&fr, &big) == 0) {
 			int y = TOPBAR_H + 26 + (int)NELEM(lines) * 19 + 40;
+			uint32_t holes, top;
 			snprintf(s, sizeof(s), "Memory free %u KB, largest block %u KB",
 				 (unsigned)(fr / 1024), (unsigned)(big / 1024));
 			text_fit(6, y + 4, BAR_FONT, s, SCREEN_W - 12, BLACK);
+			if (plat_mem_split(&holes, &top) == 0) {
+				snprintf(s, sizeof(s), "(in holes %u KB, at the top %u KB)",
+					 (unsigned)(holes / 1024), (unsigned)(top / 1024));
+				text_fit(6, y + 22, BAR_FONT, s, SCREEN_W - 12, BLACK);
+			}
 		}
 	}
 	hint("Esc: back");
@@ -1571,6 +1586,13 @@ void app_describe(char *out, size_t cap)
 		if (A.finding && A.searched) {
 			size_t n = strlen(out);
 			snprintf(out + n, cap - n, " hits=%d hit=%d", A.nhits, A.hit + 1);
+		}
+		if (A.pg.npics) {
+			size_t n = strlen(out);
+			unsigned i, ok = 0;
+			for (i = 0; i < A.pg.npics; ++i)
+				ok += (unsigned)wiki_picture_ok(&A.w, &A.pg.pics[i]);
+			snprintf(out + n, cap - n, " pics=%u shown=%u", A.pg.npics, ok);
 		}
 		break;
 	case S_SEARCH: {

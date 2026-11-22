@@ -43,6 +43,9 @@ int32_t plat_off_in(void);
 /* free memory in bytes, and the largest block that can be had; -1 where
  * not known */
 int plat_mem(uint32_t *free_bytes, uint32_t *largest);
+/* how the free memory lies: in holes between blocks in use, and at the
+ * top of the heap (one piece); -1 where not known */
+int plat_mem_split(uint32_t *holes, uint32_t *top);
 
 /* storage.  Paths are relative to the card root, 8.3 names:
  * "ENPEDIA/ENPEDIA.TOC" */
@@ -52,7 +55,8 @@ int plat_list_wikis(char names[][16], int max);
 int plat_open(const char *path, zw_io_t *io);
 /* the pieces base.P00, base.P01, ... as one file (each piece but the
  * last is exactly 1 << shift bytes) */
-int plat_open_pieces(const char *base, zw_io_t *io);
+/* base.P00, base.P01 ... (kind 'P'; 'I' for the pictures) as one */
+int plat_open_pieces(const char *base, char kind, zw_io_t *io);
 void plat_close(zw_io_t *io);
 /* small files: read all (zw_alloc'd), or overwrite an existing file
  * from its start without changing its size (never creates a file) */

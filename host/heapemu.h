@@ -12,5 +12,6 @@ void *heapemu_alloc(size_t n);
 void heapemu_free(void *p);
 void *heapemu_realloc(void *p, size_t n);
 void heapemu_stats(uint32_t *free_bytes, uint32_t *largest);
+void heapemu_split(uint32_t *holes, uint32_t *top);
 
 #endif

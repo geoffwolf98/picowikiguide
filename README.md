@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.6.2 (22 Nov 2026): the wiki dictionary lives in flash; about 112 KB more free memory.
+Version 0.7.0 (22 Nov 2026): pictures (zimprep --pictures lead|all), in four greys.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.6.2.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.7.0.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -108,9 +108,20 @@ build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
   PicoCalc has a fixed 112 KiB dictionary buffer).
 * `--font FILE`: the Unicode fallback font (default `fonts/WIKIFONT.BIN`
   of this source). It must be the one built into the firmware.
+* `--pictures none|lead|all`: pictures (default none). `lead`: the first
+  picture of each article; `all`: every picture (up to 32 an article).
+  They are converted to the screen's four greys (dithered), at most
+  311 x 255 pixels, and kept in `NAME.I00`, `NAME.I01`, ... A picture
+  goes where it is in the article if it fits on the page with its
+  caption, otherwise at the top of the next page, and the page before
+  says "▼ Picture on the next page ▼". The ZIM must have pictures:
+  Wikipedia's `maxi` ZIMs do, `nopic` and `mini` do not (TOP100 does). A
+  picture costs about 6 KB on the card; English Wikipedia with `lead`
+  might need some 30 GB more (64 GB card), with `all` much more.
+  Older firmware shows a blank space where a picture is.
 
 Each run writes `~/card/NAME/` (`NAME.TOC`, `NAME.P00`..., `NAME.IDX`,
-`NAME.HIS`, `NAME.FAV`) and, if it is not there yet, `~/card/PWGSTATE.DAT`.
+`NAME.HIS`, `NAME.FAV`, and with pictures `NAME.I00`...) and, if it is not there yet, `~/card/PWGSTATE.DAT`.
 On the PicoCalc, the contents of `~/card` go in the top folder of a FAT32
 SD card.
 
@@ -191,7 +202,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=201568`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=181528`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -238,6 +249,16 @@ every title and prefixes of it with several index summary steps.
   not the one copied last (a second or so, "Setting up this wiki"); the
   same wiki again writes nothing. With the UF2 Loader this is the end of
   its app partition, the same place.
+* 0.6.3: the help screen mentions Space (next page) and shows how the
+  free memory lies: in holes between blocks in use, or at the top of the
+  heap in one piece.
+* 0.7.0: pictures. `zimprep --pictures lead` or `all` converts the ZIM's
+  pictures to the screen's four greys (Floyd-Steinberg dithering, at most
+  311 x 255) into `NAME.I00`...; the PicoCalc draws them in the page. A
+  picture that does not fit on a page goes to the next one with its
+  caption, and the page before says so. Wikis without pictures are made
+  exactly as before. zimprep has libwebp's decoder built in (no extra
+  packages).
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

@@ -82,6 +82,19 @@ int plat_mem(uint32_t *free_bytes, uint32_t *largest)
 	return 0;
 }
 
+int plat_mem_split(uint32_t *holes, uint32_t *top)
+{
+	struct mallinfo m = mallinfo();
+	char *end = sbrk(0);
+	uint32_t tail = end && end != (char *)-1 && end < &__StackLimit ?
+			(uint32_t)(&__StackLimit - end) : 0;
+	/* fordblks: all free chunks including the top one; keepcost: the
+	 * top one */
+	*holes = (uint32_t)(m.fordblks - m.keepcost);
+	*top = (uint32_t)m.keepcost + tail;
+	return 0;
+}
+
 /* a restart asked for by the app (another wiki): no 2 second splash */
 #define RESTART_MAGIC 0x50574752u	/* "PWGR" */
 void plat_restart(void)

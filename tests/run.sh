@@ -3,7 +3,9 @@
 # the ZIMs named below:
 #   CARD=/path/to/card sh tests/run.sh
 # where CARD holds CLIMATE (wikipedia_en_climate_change_mini_2024-06.zim
-# from openzim's zim-testing-suite) and TOP100 (wikipedia_en_100_2026-08.zim).
+# from openzim's zim-testing-suite), TOP100 (wikipedia_en_100_2026-08.zim)
+# and, for the picture tests, TOP100P (the same ZIM with
+# zimprep -n TOP100P --pictures all).
 #
 # The scripts run with a heap like the PicoCalc's (PWG_HEAP bytes: the
 # firmware's heap, 0x20080000 minus the end of .bss; see README), on the
@@ -11,13 +13,16 @@
 # it read with the PicoCalc's own file code (IMG=0 to skip).
 set -e
 CARD=${CARD:?set CARD to the test card folder}
-export PWG_HEAP=${PWG_HEAP:-201568}
+export PWG_HEAP=${PWG_HEAP:-181528}
 fail=0
 run_scripts() {	# $1: program, $2: card or image, $3: label
 	for s in tests/scripts/*.txt; do
+		if [ "$s" = tests/scripts/pictures.txt ] && [ ! -d "$CARD/TOP100P" ]; then
+			echo "skip $3 $s (no TOP100P on the card)"; continue
+		fi
 		sh tests/reset-card.sh "$CARD"
 		if [ "$3" = image ]; then
-			python3 tests/mkimage.py "$CARD" "$2" 64 > /dev/null
+			python3 tests/mkimage.py "$CARD" "$2" 96 > /dev/null
 		fi
 		if $1 "$2" "$s" > /tmp/pwg-test.out; then
 			echo "ok   $3 $s"

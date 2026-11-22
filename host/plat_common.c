@@ -148,6 +148,14 @@ uint32_t plat_ms(void)
 
 void plat_keepalive(void) {}
 void plat_restart(void) {}
+int plat_mem_split(uint32_t *holes, uint32_t *top)
+{
+	if (!heapemu_on())
+		return -1;
+	heapemu_split(holes, top);
+	return 0;
+}
+
 /* PWG_FAKEMEM=free,largest (bytes) to see the help screen line */
 int plat_mem(uint32_t *f, uint32_t *l)
 {

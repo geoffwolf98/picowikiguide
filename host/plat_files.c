@@ -67,14 +67,14 @@ int plat_open(const char *path, zw_io_t *io)
 	return 0;
 }
 
-int plat_open_pieces(const char *base, zw_io_t *io)
+int plat_open_pieces(const char *base, char kind, zw_io_t *io)
 {
 	char p[4200];
 	host_files_t *f = malloc(sizeof(*f));
 	if (!f)
 		return ZW_ENOMEM;
 	full(p, sizeof(p), base);
-	if (host_files_open_pieces(f, p, 'P') < 0) {
+	if (host_files_open_pieces(f, p, kind) < 0) {
 		free(f);
 		return ZW_ENOTFOUND;
 	}

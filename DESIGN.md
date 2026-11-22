@@ -208,7 +208,41 @@ glyph widths zimprep lays out with are exactly the ones the device draws
 with. The fingerprint in the TOC catches a wiki made with different fonts;
 the device then asks for the wiki to be prepared again.
 
-### 4.5 Adding things later
+### 4.5 Pictures
+
+`zimprep --pictures lead|all` (`prep/pictures.c`, after Gen2's
+`tools/pictures.c`) scans every article for `<img>` (no maths, icons or
+SVG; the first only with `lead`, up to 32 with `all`), converts each
+picture once: decoded (WebP: the vendored libwebp decoder; PNG, JPEG,
+GIF: stb_image), scaled to at most 311 x 255 (never enlarged; under 24
+px dropped), grey, contrast stretched (1% cut), lightly sharpened, and
+Floyd-Steinberg dithered in linear light to the screen's four greys
+(panel codes FC, 9C, 4C, 00). Gen2's HTML parser and layout place them
+(a picture block is a line of its height, centred; its caption follows).
+
+`NAME.I00`, `NAME.I01`, ... (2 GiB pieces, read as one):
+
+```
+header (64): "PWGI", u32 version 1, u32 count, u32 converted,
+             u64 total size, 0...
+table (from 64): count x 8: u40 offset, u24 length (0: not converted)
+record: u16 w, u16 h, u8 format (0 as is, 1 zstd, no dictionary), 3 x 0,
+        then the pixels: 2 bits each (0 white ... 3 black), 4 a byte,
+        first in the top bits, rows padded to bytes; compressed records
+        are at most 16000 bytes (they go through the compressed frame
+        buffer)
+```
+
+The TOC header has the picture count at 288 (0: no pictures); the
+firmware opens the I pieces only then and checks the count against the
+file. In a page a picture is item type 0x81 (PI_PIC): varint length 10,
+i16 x, u16 w, u16 h, u32 number, on a line of the picture's height.
+Pagination keeps a picture with its caption; a picture that does not fit
+in what is left of a page goes to the top of the next, and that page
+gets a last line "▼ Picture on the next page ▼". The device keeps the
+last picture decoded (20 KB, static) so redrawing reads nothing.
+
+### 4.6 Adding things later
 
 * New page item types (formula bitmaps, pictures) use type >= 0x80, which
   older firmware skips.
@@ -223,7 +257,8 @@ zimprep [options] INPUT.zim OUTDIR
   -n NAME        8.3 folder name (default from the ZIM name)
   --threads N    default: all CPUs
   --level N      zstd level (default 19)
-  --dict-kb N    dictionary size (default 112)
+  --dict-kb N    dictionary size (default and most 112)
+  --pictures M   none (default), lead or all
 ```
 
 Steps:
