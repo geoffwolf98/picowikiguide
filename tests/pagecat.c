@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "wiki.h"
+#include "overlay.h"
 #include "index.h"
 #include "fold.h"
 #include "gfx.h"
@@ -354,6 +355,7 @@ int main(int argc, char **argv)
 		font_draw(fb, SCREEN_STRIDE, SCREEN_H, SCREEN_W - 5 - font_width(FONT_SMALLL, s, n), 13,
 			  FONT_SMALLL, s, n, WHITE);
 	}
+	ov_clear();
 	page_draw(&pg, fb, PAGE_TOP, focus);
 	wiki_draw_pictures(&w, &pg, fb, PAGE_TOP);
 	fprintf(stderr, "page %u of %u: %u lines, %u items, %u links, %u sections in article\n",

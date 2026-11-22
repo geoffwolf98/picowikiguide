@@ -17,8 +17,9 @@ PREP_INC  := -Isrc -Iprep -Ihost -Ifonts -Ithird_party/zstd-full -Ithird_party/x
 
 # the app side (what runs on the PicoCalc), built for the PC
 DEC       := third_party/zstd/zstddeclib.c
-APP_CORE  := src/wiki.c src/index.c src/fold.c src/font.c src/inflate.c src/gfx.c fonts/fonts.c
-APP_INC   := -Isrc -Ihost -Ifonts -Ipico -Ithird_party/zstd
+APP_CORE  := src/wiki.c src/overlay.c src/present.c third_party/tjpgd/tjpgd.c src/index.c src/fold.c src/font.c \
+             src/inflate.c src/gfx.c fonts/fonts.c
+APP_INC   := -Isrc -Ihost -Ifonts -Ipico -Ithird_party/zstd -Ithird_party/tjpgd
 
 obj = $(patsubst %.c,$(BUILD)/$(2)/%.o,$(1))
 
@@ -31,7 +32,7 @@ ifneq ($(SDL_LIBS),)
 APPS += $(BUILD)/pwg-sdl
 endif
 
-all: $(BUILD)/zimprep $(BUILD)/pagecat $(BUILD)/dicttest $(APPS)
+all: $(BUILD)/zimprep $(BUILD)/pagecat $(BUILD)/dicttest $(BUILD)/ovtest $(APPS)
 
 $(BUILD)/pwg-headless: $(call obj,host/plat_headless.c $(APP_SRC),app) $(call obj,$(DEC),dec)
 	$(CC) -o $@ $^ -lm
@@ -57,6 +58,9 @@ $(BUILD)/pagecat: $(call obj,tests/pagecat.c $(APP_CORE) host/hostio.c host/heap
 	$(CC) -o $@ $^
 
 $(BUILD)/dicttest: $(call obj,tests/dicttest.c src/dictsync.c,app)
+	$(CC) -o $@ $^
+
+$(BUILD)/ovtest: $(call obj,tests/ovtest.c src/present.c src/overlay.c,app)
 	$(CC) -o $@ $^
 
 $(BUILD)/app/%.o: %.c

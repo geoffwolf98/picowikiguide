@@ -13,6 +13,7 @@
 #include "gfx.h"
 #include "plat_files.h"
 #include "plat_common.h"
+#include "overlay.h"
 #include "splash.h"
 
 static SDL_Window *win;
@@ -24,12 +25,15 @@ static int safe;
 void plat_present(const uint8_t *fb)
 {
 	static uint32_t px[SCREEN_W * SCREEN_H];
-	int i;
+	static const uint8_t level[4] = { 0xf4, 0xa8, 0x5c, 0x10 };
+	uint8_t rgb[SCREEN_W * 3];
+	int y, x;
 	memcpy(last, fb, sizeof(last));
-	static const uint32_t grey[4] = { 0xfff4f4f0u, 0xffa8a8a6u, 0xff5c5c5bu, 0xff101010u };
-	for (i = 0; i < SCREEN_W * SCREEN_H; ++i) {
-		int v = (fb[(i / SCREEN_W) * SCREEN_STRIDE + (i % SCREEN_W) / 4] >> (6 - 2 * (i % 4))) & 3;
-		px[i] = grey[v];
+	for (y = 0; y < SCREEN_H; ++y) {
+		ov_row_rgb(fb + y * SCREEN_STRIDE, y, level, rgb);	/* with colour pictures */
+		for (x = 0; x < SCREEN_W; ++x)
+			px[y * SCREEN_W + x] = 0xff000000u | (uint32_t)rgb[x * 3] << 16 |
+					       (uint32_t)rgb[x * 3 + 1] << 8 | rgb[x * 3 + 2];
 	}
 	SDL_UpdateTexture(tex, NULL, px, SCREEN_W * 4);
 	SDL_RenderClear(ren);

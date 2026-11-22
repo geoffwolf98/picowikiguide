@@ -226,21 +226,37 @@ Floyd-Steinberg dithered in linear light to the screen's four greys
 header (64): "PWGI", u32 version 1, u32 count, u32 converted,
              u64 total size, 0...
 table (from 64): count x 8: u40 offset, u24 length (0: not converted)
-record: u16 w, u16 h, u8 format (0 as is, 1 zstd, no dictionary), 3 x 0,
-        then the pixels: 2 bits each (0 white ... 3 black), 4 a byte,
-        first in the top bits, rows padded to bytes; compressed records
-        are at most 16000 bytes (they go through the compressed frame
-        buffer)
+record: u16 w, u16 h, u8 format, 3 x 0, then:
+        format 0: the pixels, 2 bits each (0 white ... 3 black), 4 a byte,
+                  first in the top bits, rows padded to bytes
+        format 1: the same compressed with zstd (no dictionary)
+        format 2: colour, a baseline JPEG (zimprep --colour)
+        records past the header are at most 16000 bytes (they go through
+        the compressed frame buffer)
 ```
 
 The TOC header has the picture count at 288 (0: no pictures); the
 firmware opens the I pieces only then and checks the count against the
 file. In a page a picture is item type 0x81 (PI_PIC): varint length 10,
 i16 x, u16 w, u16 h, u32 number, on a line of the picture's height.
+Colour (format 2) pictures are decoded with TJpgDec (`third_party/tjpgd`,
+RGB888 out in 8 x 8 or 16 x 16 blocks, 3.5 KB work area) into RGB332 with a
+4 x 4 ordered dither. They are not drawn into the 2 bit frame buffer: each
+is a rectangle listed in `src/overlay.c`, and `src/present.c` (the LCD
+driver's changed-rows sender, also used by the PC builds' screenshots and
+window) takes those pixels from the picture as it makes each row's RGB.
+A row is sent when its frame buffer bytes changed or, when the list of
+pictures changed (position, size, pixels or a generation number bumped
+whenever the buffer is refilled), when a picture covers it now or did
+last time. `tests/ovtest.c` checks this against a simulated panel. The
+picture buffer (311 x 255 bytes, fixed) holds all the pictures of the
+page last drawn, grey (2 bits a pixel) or colour (a byte a pixel); a
+page whose pictures are not all there refills it from the start.
+
 Pagination keeps a picture with its caption; a picture that does not fit
 in what is left of a page goes to the top of the next, and that page
-gets a last line "▼ Picture on the next page ▼". The device keeps the
-last picture decoded (20 KB, static) so redrawing reads nothing.
+gets a last line "▼ Picture on the next page ▼". Redrawing a page reads
+nothing (its pictures stay decoded in the picture buffer).
 
 ### 4.6 Adding things later
 

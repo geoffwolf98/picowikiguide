@@ -13,6 +13,7 @@
 #include "fat.h"
 #include "blockdev.h"
 #include "lcd.h"
+#include "overlay.h"
 #include "kbd.h"
 #include "sd.h"
 
@@ -116,6 +117,19 @@ static void draw(void)
 	y += 16;
 	snprintf(s, sizeof(s), "Battery register: %d", kbd_battery());
 	txt(6, y, FONT_SMALLL, s);
+	/* colour bars (shown over the frame buffer, as pictures are): top
+	 * down red, green, blue; if red and blue are swapped, say so */
+	{
+		static uint8_t bars[48 * 36];
+		int k;
+		for (k = 0; k < 48 * 36; ++k)
+			bars[k] = k < 48 * 12 ? 0xe0 : k < 48 * 24 ? 0x1c : 0x03;
+		ov_clear();
+		ov_add(SCREEN_W - 52, 70, 48, 36, bars, 1);
+		txt(SCREEN_W - 120, 80, FONT_SMALLL, "red");
+		txt(SCREEN_W - 120, 92, FONT_SMALLL, "green");
+		txt(SCREEN_W - 120, 104, FONT_SMALLL, "blue");
+	}
 	y += 10;
 	gfx_hline(fb, SCREEN_STRIDE, SCREEN_H, 0, y, SCREEN_W, BLACK);
 	y += 18;

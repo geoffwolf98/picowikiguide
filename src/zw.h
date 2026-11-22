@@ -6,7 +6,7 @@
 #define ZW_H
 
 /* release number: shown on the help screen and by zimprep --version */
-#define PWG_VERSION "0.7.3"
+#define PWG_VERSION "0.8.0"
 
 #include <stdint.h>
 #include <stddef.h>

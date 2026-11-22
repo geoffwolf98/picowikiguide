@@ -2,6 +2,8 @@
  * PicoWikiGuide - reading a prepared wiki and drawing its pages
  */
 #include "wiki.h"
+#include "overlay.h"
+#include "tjpgd.h"
 #include "font.h"
 #include "gfx.h"
 #define ZSTD_STATIC_LINKING_ONLY
@@ -32,10 +34,25 @@ static uint8_t s_dict[DICT_MAX];
 static uint64_t s_dctx[DCTX_WS / 8];
 static uint64_t s_ddict[DDICT_WS / 8];
 static wiki_t *s_open;		/* the wiki using them */
-/* the last picture drawn, decoded (2 bits a pixel) */
-static uint8_t s_pic[PIC_MAX_BYTES];
-static uint32_t s_pic_no = 0xffffffffu;
-static uint16_t s_pic_w, s_pic_h;
+/* the pictures of the page last drawn, decoded: grey ones 2 bits a pixel
+ * (drawn into the frame buffer), colour ones RGB332 (shown over it, see
+ * overlay.h).  Kept, so redrawing the page reads nothing. */
+#define PICBUF_SIZE (311u * 255u)
+static uint8_t s_picbuf[PICBUF_SIZE];
+typedef struct pcache {
+	uint32_t number, off;
+	uint16_t w, h;
+	uint8_t colour;
+} pcache_t;
+static pcache_t s_pc[PAGE_MAX_PICS];
+static unsigned s_npc;
+static uint32_t s_pc_used, s_pc_gen;
+static void pc_reset(void)
+{
+	s_npc = 0;
+	s_pc_used = 0;
+	s_pc_gen++;
+}
 
 void wiki_set_notice(void (*fn)(void))
 {
@@ -156,68 +173,175 @@ int wiki_set_pictures(wiki_t *w, const zw_io_t *io)
 		return ZW_EFORMAT;	/* not this wiki's pictures */
 	w->pics = *io;
 	w->have_pics = 1;
-	if (s_open == w)
-		s_pic_no = 0xffffffffu;
+	pc_reset();
 	return ZW_OK;
 }
 
-/* picture n into s_pic (kept: the same picture again reads nothing) */
-static int load_picture(wiki_t *w, uint32_t n)
+/* JPEG (colour records) into the picture buffer as RGB332, with a 4 x 4
+ * ordered dither: TJpgDec hands over blocks of RGB888 */
+static const uint8_t bayer4[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+static uint8_t s_jdwork[TJPGD_WORKSPACE_SIZE] __attribute__((aligned(8)));
+
+typedef struct jctx {
+	const uint8_t *data;
+	size_t len, pos;
+	uint8_t *out;		/* w * h RGB332 */
+	unsigned w, h;
+} jctx_t;
+
+static size_t jd_in(JDEC *jd, uint8_t *buf, size_t n)
+{
+	jctx_t *c = jd->device;
+	if (n > c->len - c->pos)
+		n = c->len - c->pos;
+	if (buf)
+		memcpy(buf, c->data + c->pos, n);
+	c->pos += n;
+	return n;
+}
+
+static int jd_out(JDEC *jd, void *bitmap, JRECT *r)
+{
+	jctx_t *c = jd->device;
+	const uint8_t *p = bitmap;
+	unsigned x, y;
+	for (y = r->top; y <= r->bottom; ++y)
+		for (x = r->left; x <= r->right; ++x, p += 3) {
+			/* threshold 0..15 -> a nudge of up to one step of each channel */
+			int t = bayer4[(y & 3) * 4 + (x & 3)];
+			int rr = p[0] + ((t * 2 - 15) * 255) / (7 * 32);
+			int gg = p[1] + ((t * 2 - 15) * 255) / (7 * 32);
+			int bb = p[2] + ((t * 2 - 15) * 255) / (3 * 32);
+			rr = rr < 0 ? 0 : rr > 255 ? 255 : rr;
+			gg = gg < 0 ? 0 : gg > 255 ? 255 : gg;
+			bb = bb < 0 ? 0 : bb > 255 ? 255 : bb;
+			if (x < c->w && y < c->h)
+				c->out[y * c->w + x] = (uint8_t)(((rr * 7 + 127) / 255) << 5 |
+								 ((gg * 7 + 127) / 255) << 2 |
+								 ((bb * 3 + 127) / 255));
+		}
+	return 1;
+}
+
+/* picture n into the picture buffer (after what is there); its entry */
+static pcache_t *load_picture(wiki_t *w, uint32_t n)
 {
 	uint8_t e[8];
 	uint64_t off;
 	uint32_t len, size, dw, dh;
-	if (n == s_pic_no)
-		return ZW_OK;
-	s_pic_no = 0xffffffffu;
-	if (!w->have_pics || n >= w->pic_count)
-		return ZW_ERANGE;
+	unsigned i;
+	pcache_t *pc;
+	for (i = 0; i < s_npc; ++i)
+		if (s_pc[i].number == n)
+			return &s_pc[i];
+	if (!w->have_pics || n >= w->pic_count || s_npc >= PAGE_MAX_PICS)
+		return NULL;
 	if (zw_io_read(&w->pics, PIC_FILE_HDR + (uint64_t)n * 8, e, 8) < 0)
-		return ZW_EIO;
+		return NULL;
 	off = zw_rd32(e) | (uint64_t)e[4] << 32;
 	len = e[5] | (uint32_t)e[6] << 8 | (uint32_t)e[7] << 16;
 	if (len < 8)
-		return ZW_ENOTFOUND;	/* zimprep could not convert it */
+		return NULL;	/* zimprep could not convert it */
 	/* the record: u16 w, u16 h, u8 format, 3 x 0, data (through the
 	 * compressed frame buffer, free outside wiki_page) */
 	if (zw_io_read(&w->pics, off, s_cbuf, 8) < 0)
-		return ZW_EIO;
+		return NULL;
 	dw = zw_rd16(s_cbuf);
 	dh = zw_rd16(s_cbuf + 2);
-	size = (uint32_t)((dw * 2 + 7) / 8) * dh;
-	if (!dw || !dh || size > sizeof(s_pic))
-		return ZW_EFORMAT;
+	if (!dw || !dh || dw > 311 || dh > 255)
+		return NULL;
+	pc = &s_pc[s_npc];
+	pc->number = n;
+	pc->w = (uint16_t)dw;
+	pc->h = (uint16_t)dh;
+	pc->colour = s_cbuf[4] == 2;
+	pc->off = s_pc_used;
+	size = pc->colour ? dw * dh : (uint32_t)((dw * 2 + 7) / 8) * dh;
+	if (size > PICBUF_SIZE - s_pc_used)
+		return NULL;	/* no room left (the next page starts afresh) */
 	if (s_cbuf[4] == 0) {
-		if (len - 8 != size || zw_io_read(&w->pics, off + 8, s_pic, size) < 0)
-			return ZW_EIO;
-	} else {
+		if (len - 8 != size || zw_io_read(&w->pics, off + 8, s_picbuf + pc->off, size) < 0)
+			return NULL;
+	} else if (s_cbuf[4] == 1) {
 		size_t r;
 		if (len > sizeof(s_cbuf) || zw_io_read(&w->pics, off, s_cbuf, len) < 0)
-			return ZW_EIO;
-		r = ZSTD_decompressDCtx(w->dctx, s_pic, size, s_cbuf + 8, len - 8);
+			return NULL;
+		r = ZSTD_decompressDCtx(w->dctx, s_picbuf + pc->off, size, s_cbuf + 8, len - 8);
 		if (ZSTD_isError(r) || r != size)
-			return ZW_EFORMAT;
+			return NULL;
+	} else if (s_cbuf[4] == 2) {
+		JDEC jd;
+		jctx_t c;
+		if (len > sizeof(s_cbuf) || zw_io_read(&w->pics, off, s_cbuf, len) < 0)
+			return NULL;
+		memset(&jd, 0, sizeof(jd));
+		c.data = s_cbuf + 8;
+		c.len = len - 8;
+		c.pos = 0;
+		c.out = s_picbuf + pc->off;
+		c.w = dw;
+		c.h = dh;
+		if (jd_prepare(&jd, jd_in, s_jdwork, sizeof(s_jdwork), &c) != JDR_OK ||
+		    jd.width != dw || jd.height != dh || jd_decomp(&jd, jd_out, 0) != JDR_OK)
+			return NULL;
+	} else {
+		return NULL;	/* a later kind */
 	}
-	s_pic_no = n;
-	s_pic_w = (uint16_t)dw;
-	s_pic_h = (uint16_t)dh;
-	return ZW_OK;
+	s_pc_used += size;
+	s_npc++;
+	return pc;
+}
+
+/* all the page's pictures in the buffer: kept if they are there already,
+ * else the buffer starts afresh for this page */
+static void load_page_pictures(wiki_t *w, const page_t *pg)
+{
+	unsigned i, k;
+	for (i = 0; i < pg->npics; ++i) {
+		for (k = 0; k < s_npc; ++k)
+			if (s_pc[k].number == pg->pics[i].number)
+				break;
+		if (k == s_npc)
+			break;
+	}
+	if (i == pg->npics)
+		return;		/* all there */
+	pc_reset();
+	for (i = 0; i < pg->npics; ++i)
+		load_picture(w, pg->pics[i].number);
+}
+
+static const pcache_t *cached(const page_pic_t *pp)
+{
+	unsigned k;
+	for (k = 0; k < s_npc; ++k)
+		if (s_pc[k].number == pp->number && s_pc[k].w == pp->w && s_pc[k].h == pp->h)
+			return &s_pc[k];
+	return NULL;
 }
 
 int wiki_picture_ok(wiki_t *w, const page_pic_t *pp)
 {
-	return load_picture(w, pp->number) == ZW_OK && s_pic_w == pp->w && s_pic_h == pp->h;
+	const pcache_t *c = cached(pp);
+	if (!c && !s_npc)
+		c = load_picture(w, pp->number) ? cached(pp) : NULL;
+	return c != NULL;
 }
 
 void wiki_draw_pictures(wiki_t *w, const page_t *pg, uint8_t *fb, int y0)
 {
 	unsigned i;
+	load_page_pictures(w, pg);
 	for (i = 0; i < pg->npics; ++i) {
 		const page_pic_t *pp = &pg->pics[i];
-		if (load_picture(w, pp->number) == ZW_OK && s_pic_w == pp->w && s_pic_h == pp->h)
-			gfx_blit2(fb, SCREEN_STRIDE, SCREEN_H, pp->x, y0 + pp->y, s_pic, pp->w, pp->h, BLACK);
-		else
+		const pcache_t *c = cached(pp);
+		if (!c)
 			gfx_rect(fb, SCREEN_STRIDE, SCREEN_H, pp->x, y0 + pp->y, pp->w, pp->h, BLACK);
+		else if (c->colour)
+			ov_add(pp->x, y0 + pp->y, pp->w, pp->h, s_picbuf + c->off, s_pc_gen);
+		else
+			gfx_blit2(fb, SCREEN_STRIDE, SCREEN_H, pp->x, y0 + pp->y, s_picbuf + c->off,
+				  pp->w, pp->h, BLACK);
 	}
 }
 
@@ -226,7 +350,7 @@ void wiki_close(wiki_t *w)
 	/* the buffers are fixed: nothing to free */
 	if (s_open == w)
 		s_open = NULL;
-	s_pic_no = 0xffffffffu;		/* another wiki's numbers */
+	pc_reset();		/* another wiki's numbers */
 	memset(w, 0, sizeof(*w));
 	w->frame_no = TOC_NONE;
 }

@@ -3,8 +3,9 @@
 # the ZIMs named below:
 #   CARD=/path/to/card sh tests/run.sh
 # where CARD holds CLIMATE (wikipedia_en_climate_change_mini_2024-06.zim
-# from openzim's zim-testing-suite) and TOP100 (wikipedia_en_100_2026-08.zim
-# with zimprep -n TOP100 --pictures all).
+# from openzim's zim-testing-suite), TOP100 (wikipedia_en_100_2026-08.zim
+# with zimprep -n TOP100 --pictures all --colour) and, for the grey
+# picture test, TOP100G (the same with -n TOP100G --pictures all).
 #
 # The scripts run with a heap like the PicoCalc's (PWG_HEAP bytes: the
 # firmware's heap, 0x20080000 minus the end of .bss; see README), on the
@@ -12,16 +13,19 @@
 # it read with the PicoCalc's own file code (IMG=0 to skip).
 set -e
 CARD=${CARD:?set CARD to the test card folder}
-export PWG_HEAP=${PWG_HEAP:-181528}
+export PWG_HEAP=${PWG_HEAP:-118212}
 fail=0
 run_scripts() {	# $1: program, $2: card or image, $3: label
 	for s in tests/scripts/*.txt; do
 		if [ "$s" = tests/scripts/pictures.txt ] && [ ! -f "$CARD/TOP100/TOP100.I00" ]; then
 			echo "skip $3 $s (TOP100 on the card has no pictures)"; continue
 		fi
+		if [ "$s" = tests/scripts/picgrey.txt ] && [ ! -d "$CARD/TOP100G" ]; then
+			echo "skip $3 $s (no TOP100G on the card)"; continue
+		fi
 		sh tests/reset-card.sh "$CARD"
 		if [ "$3" = image ]; then
-			python3 tests/mkimage.py "$CARD" "$2" 96 > /dev/null
+			python3 tests/mkimage.py "$CARD" "$2" 128 > /dev/null
 		fi
 		if $1 "$2" "$s" > /tmp/pwg-test.out; then
 			echo "ok   $3 $s"
@@ -37,6 +41,8 @@ if [ "${IMG:-1}" = 1 ] && python3 -c "import pyfatfs" 2> /dev/null; then
 fi
 sh tests/reset-card.sh "$CARD"
 unset PWG_HEAP
+build/ovtest > /tmp/pwg-ov.out && echo "ok   colour pictures on the panel" ||
+	{ echo "FAIL colour pictures on the panel"; cat /tmp/pwg-ov.out; fail=1; }
 build/dicttest > /tmp/pwg-dict.out && echo "ok   dictionary flash copy" ||
 	{ echo "FAIL dictionary flash copy"; cat /tmp/pwg-dict.out; fail=1; }
 build/pagecat --font-fingerprint > /tmp/pwg-font.out && echo "ok   font fingerprint" ||

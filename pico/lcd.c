@@ -7,6 +7,7 @@
 #include "hardware/spi.h"
 #include "hardware/gpio.h"
 #include "lcd.h"
+#include "present.h"
 
 #define LCD_SPI   spi1
 #define LCD_SCK   10
@@ -125,37 +126,23 @@ static void region(int y0, int y1)
 	gpio_put(LCD_DC, 1);
 }
 
+static void spi_rows(const uint8_t *rgb)
+{
+	spi_write_blocking(LCD_SPI, rgb, W * 3);
+}
+
+static void spi_end(void)
+{
+	gpio_put(LCD_CS, 1);
+}
+
 void lcd_present(const uint8_t *fb)
 {
-	/* grey levels, a little darker than linear so text keeps its weight */
+	/* grey levels, a little darker than linear so text keeps its weight;
+	 * 0 white .. 3 black (with inversion on, 0x00 shows as black); 3
+	 * bytes a pixel, red, green, blue, the panel using the top 6 bits */
 	static const uint8_t level[4] = { 0xFC, 0x9C, 0x4C, 0x00 };
-	static uint8_t line[W * 3];
-	int y0 = 0, y1, y, x;
-	for (;;) {
-		/* the next run of changed rows */
-		while (y0 < H && valid && memcmp(fb + y0 * STRIDE, shown + y0 * STRIDE, STRIDE) == 0)
-			y0++;
-		if (y0 >= H)
-			break;
-		y1 = y0;
-		while (y1 + 1 < H && (!valid || memcmp(fb + (y1 + 1) * STRIDE, shown + (y1 + 1) * STRIDE,
-							STRIDE) != 0))
-			y1++;
-		region(y0, y1);
-		for (y = y0; y <= y1; ++y) {
-			const uint8_t *r = fb + y * STRIDE;
-			for (x = 0; x < W; ++x) {
-				/* 0 white .. 3 black; with inversion on, 0x00 shows as black */
-				uint8_t v = level[(r[x >> 2] >> (6 - 2 * (x & 3))) & 3];
-				line[x * 3] = line[x * 3 + 1] = line[x * 3 + 2] = v;
-			}
-			spi_write_blocking(LCD_SPI, line, sizeof(line));
-		}
-		gpio_put(LCD_CS, 1);
-		memcpy(shown + y0 * STRIDE, fb + y0 * STRIDE, (size_t)(y1 - y0 + 1) * STRIDE);
-		y0 = y1 + 1;
-	}
-	valid = 1;
+	present_rows(fb, shown, &valid, level, region, spi_rows, spi_end);
 }
 
 void lcd_display(int on)

@@ -4,6 +4,7 @@
  */
 #include <stdio.h>
 #include "app.h"
+#include "overlay.h"
 #include "plat.h"
 #include "wiki.h"
 #include "index.h"
@@ -981,6 +982,7 @@ static void draw_calc(void)
 static void draw(void)
 {
 	clear();
+	ov_clear();	/* colour pictures: the article page adds its own */
 	switch (A.screen) {
 	case S_MSG:
 		topbar("PicoWikiGuide", NULL);
@@ -1592,7 +1594,7 @@ void app_describe(char *out, size_t cap)
 			unsigned i, ok = 0;
 			for (i = 0; i < A.pg.npics; ++i)
 				ok += (unsigned)wiki_picture_ok(&A.w, &A.pg.pics[i]);
-			snprintf(out + n, cap - n, " pics=%u shown=%u", A.pg.npics, ok);
+			snprintf(out + n, cap - n, " pics=%u shown=%u colour=%d", A.pg.npics, ok, ov_count());
 		}
 		break;
 	case S_SEARCH: {

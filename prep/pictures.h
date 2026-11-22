@@ -27,6 +27,10 @@ long pictures_make(zim_t *z, const char *input, const char *base, int mode, int 
  * Thread safe once pictures_make has returned. */
 void pictures_for(uint32_t entry, pic_set_t *s);
 
+/* colour pictures (baseline JPEG records) instead of grey; quality 10
+ * to 100 (lowered for a picture until it fits the PicoCalc's buffer) */
+void pictures_colour(int on, int quality);
+
 /* totals for the TOC header and the summary */
 uint32_t pictures_count(void);
 

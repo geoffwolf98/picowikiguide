@@ -1,5 +1,9 @@
 # PicoWikiGuide: to do
 
+* Colour pictures: check the panel's colour order on the device (the
+  hardware test shows red, green and blue bars top down); if red and blue
+  are swapped, swap them in `src/overlay.c` (ov_row_rgb).
+
 * Battery level in the top bar. The keyboard controller already gives it
   (register 0x0b, `kbd_battery()` in `pico/kbd.c`, shown raw by the
   hardware test); needs the scale checked on the device, then a small

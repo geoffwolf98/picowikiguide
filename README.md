@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.7.3 (22 Nov 2026): TOP100 comes with pictures; a zimprep hang fixed.
+Version 0.8.0 (22 Nov 2026): colour pictures (zimprep --colour).
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.7.3.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.8.0.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -96,7 +96,7 @@ A "card" is a folder laid out like the SD card: one folder per wiki, plus
 `PWGSTATE.DAT`. zimprep makes both:
 
 ```
-build/zimprep -n TOP100 --pictures all wikipedia_en_100_2026-08.zim ~/card
+build/zimprep -n TOP100 --pictures all --colour wikipedia_en_100_2026-08.zim ~/card
 build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
 ```
 
@@ -119,6 +119,11 @@ build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
   picture costs about 6 KB on the card; English Wikipedia with `lead`
   might need some 30 GB more (64 GB card), with `all` much more.
   Older firmware shows a blank space where a picture is.
+* `--colour` (with `--pictures`): colour pictures, kept as small JPEGs
+  (about 10 KB each, 1.6 times the grey ones) and shown in 256 colours
+  (RGB332 with ordered dithering). `--jpeg-quality N` (default 75) trades
+  size for quality; a picture is made smaller until it fits the
+  PicoCalc's buffer. Firmware before 0.8.0 shows an outline instead.
 
 Each run writes `~/card/NAME/` (`NAME.TOC`, `NAME.P00`..., `NAME.IDX`,
 `NAME.HIS`, `NAME.FAV`, and with pictures `NAME.I00`...) and, if it is not there yet, `~/card/PWGSTATE.DAT`.
@@ -202,7 +207,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=181528`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=118212`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -273,6 +278,16 @@ every title and prefixes of it with several index summary steps.
   The tables are now built before the threads start. Wikis it finished
   are fine. The card zip and the tests have one TOP100, with pictures
   (no TOP100P).
+* 0.8.0: colour pictures. `zimprep --pictures all --colour` keeps each
+  picture as a small JPEG; the PicoCalc decodes it (TJpgDec) into a
+  fixed 79 KB picture buffer as RGB332 with ordered dithering and shows
+  it over the grey screen: the LCD driver takes those pixels from the
+  picture as it sends the rows, and resends a picture's rows whenever
+  the pictures change, so nothing is left half painted (tested against
+  a simulated panel). The buffer holds all of a page's pictures, grey or
+  colour; it replaces the 20 KB grey one, so about 60 KB less is free.
+  The hardware test shows red, green and blue bars to check the panel's
+  colour order. TOP100 in the card zip is in colour.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

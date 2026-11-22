@@ -276,6 +276,7 @@ static int is_blank(const lay_line_t *ln)
 }
 
 static int g_pics;		/* PICS_NONE, PICS_LEAD, PICS_ALL */
+static int g_colour, g_jpeg_q = 75;	/* --colour, --jpeg-quality */
 
 /* lay out article number `art` and turn it into frames.  With raw set,
  * the frames are left uncompressed (dictionary samples). */
@@ -807,6 +808,10 @@ int main(int argc, char **argv)
 			if (g_pics < 0)
 				die("--pictures takes none, lead or all, not %s", m);
 		}
+		else if (strcmp(argv[a], "--colour") == 0 || strcmp(argv[a], "--color") == 0)
+			g_colour = 1;
+		else if (strcmp(argv[a], "--jpeg-quality") == 0 && a + 1 < argc)
+			g_jpeg_q = atoi(argv[++a]);
 		else if (argv[a][0] == '-')
 			die("unknown option %s", argv[a]);
 		else if (!input)
@@ -818,7 +823,7 @@ int main(int argc, char **argv)
 	}
 	if (!input || !outdir) {
 		fprintf(stderr, "usage: zimprep [-n NAME] [--threads N] [--level N] [--dict-kb N] "
-			"[--pictures none|lead|all] INPUT.zim OUTDIR\n");
+			"[--pictures none|lead|all [--colour] [--jpeg-quality N]] INPUT.zim OUTDIR\n");
 		return 2;
 	}
 	if (!name[0])
@@ -907,6 +912,7 @@ int main(int argc, char **argv)
 	fprintf(stderr, "%s: %u articles, %zu titles, %d threads\n", input, g_narts, nrec, g_nthreads);
 
 	/* pictures first: the layout needs their sizes */
+	pictures_colour(g_colour, g_jpeg_q);
 	if (pictures_make(&g_zim, input, g_base, g_pics, g_nthreads) < 0)
 		die("could not make the pictures%s", "");
 

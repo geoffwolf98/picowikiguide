@@ -10,6 +10,7 @@
 #include "gfx.h"
 #include "plat_common.h"
 #include "heapemu.h"
+#include "overlay.h"
 
 static const struct { const char *name; int key; } keys[] = {
 	{ "up", K_UP }, { "down", K_DOWN }, { "left", K_LEFT }, { "right", K_RIGHT },
@@ -75,19 +76,27 @@ static void chunk(FILE *f, const char *type, const uint8_t *d, uint32_t n)
 	fwrite(t, 1, 4, f);
 }
 
+/* with colour pictures on the screen: 8 bit RGB, else 2 bit grey */
 static int save_png(const char *path, const uint8_t *fb)
 {
-	static uint8_t raw[(SCREEN_STRIDE + 1) * SCREEN_H], z[sizeof(raw) + 64];
+	static uint8_t raw[(SCREEN_W * 3 + 1) * SCREEN_H], z[sizeof(raw) + 64 + sizeof(raw) / 65535 * 5];
+	static const uint8_t level[4] = { 255, 170, 85, 0 };
 	uint8_t ihdr[13] = { 0 };
 	uint32_t n = 0, i, a = 1, b = 0, left, zn = 0;
+	int colour = ov_count() > 0;
 	FILE *f = fopen(path, "wb");
 	if (!f)
 		return -1;
 	for (i = 0; i < SCREEN_H; ++i) {
 		uint32_t k;
 		raw[n++] = 0;
-		for (k = 0; k < SCREEN_STRIDE; ++k)
-			raw[n++] = (uint8_t)~fb[i * SCREEN_STRIDE + k];	/* PNG: 3 = white */
+		if (colour) {
+			ov_row_rgb(fb + i * SCREEN_STRIDE, (int)i, level, raw + n);
+			n += SCREEN_W * 3;
+		} else {
+			for (k = 0; k < SCREEN_STRIDE; ++k)
+				raw[n++] = (uint8_t)~fb[i * SCREEN_STRIDE + k];	/* PNG: 3 = white */
+		}
 	}
 	z[zn++] = 0x78;
 	z[zn++] = 0x01;
@@ -109,8 +118,8 @@ static int save_png(const char *path, const uint8_t *fb)
 	fwrite("\x89PNG\r\n\x1a\n", 1, 8, f);
 	be32(ihdr, SCREEN_W);
 	be32(ihdr + 4, SCREEN_H);
-	ihdr[8] = 2;	/* bit depth: 4 greys */
-	ihdr[9] = 0;	/* grey */
+	ihdr[8] = colour ? 8 : 2;	/* bit depth: 4 greys, or 8 bit RGB */
+	ihdr[9] = colour ? 2 : 0;	/* RGB, or grey */
 	chunk(f, "IHDR", ihdr, 13);
 	chunk(f, "IDAT", z, zn);
 	chunk(f, "IEND", NULL, 0);

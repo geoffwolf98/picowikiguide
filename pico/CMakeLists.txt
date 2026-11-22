@@ -17,7 +17,7 @@ include_directories(${TOP}/src ${TOP}/fonts ${CMAKE_CURRENT_LIST_DIR})
 add_executable(pwg_hwtest
 	hwtest.c lcd.c kbd.c sd.c
 	${TOP}/src/font.c ${TOP}/src/inflate.c ${TOP}/src/gfx.c ${TOP}/src/fat.c ${TOP}/src/blockdev.c
-	${TOP}/fonts/fonts.c)
+	${TOP}/src/overlay.c ${TOP}/src/present.c ${TOP}/fonts/fonts.c)
 target_link_libraries(pwg_hwtest pico_stdlib hardware_spi hardware_i2c)
 pico_enable_stdio_usb(pwg_hwtest 0)
 pico_enable_stdio_uart(pwg_hwtest 0)
@@ -35,8 +35,9 @@ add_executable(picowikiguide
 	plat_pico.c plat_storage.c dictflash.c ${TOP}/src/dictsync.c lcd.c kbd.c sd.c ${CMAKE_CURRENT_BINARY_DIR}/wikifont.S
 	${TOP}/src/app.c ${TOP}/src/splash.c ${TOP}/src/wiki.c ${TOP}/src/index.c ${TOP}/src/fold.c
 	${TOP}/src/calc.c ${TOP}/src/font.c ${TOP}/src/inflate.c ${TOP}/src/gfx.c ${TOP}/src/fat.c
-	${TOP}/src/blockdev.c ${TOP}/fonts/fonts.c ${TOP}/third_party/zstd/zstddeclib.c)
-target_include_directories(picowikiguide PRIVATE ${TOP}/third_party/zstd)
+	${TOP}/src/blockdev.c ${TOP}/fonts/fonts.c ${TOP}/third_party/zstd/zstddeclib.c
+	${TOP}/src/overlay.c ${TOP}/src/present.c ${TOP}/third_party/tjpgd/tjpgd.c)
+target_include_directories(picowikiguide PRIVATE ${TOP}/third_party/zstd ${TOP}/third_party/tjpgd)
 target_compile_definitions(picowikiguide PRIVATE ZSTD_LEGACY_SUPPORT=0 ZSTD_DISABLE_ASM
 	ZSTD_NO_INLINE=1 PICO_STACK_SIZE=0x1000
 	PICO_MALLOC_PANIC=0 PWG_DICT_IN_FLASH=1)

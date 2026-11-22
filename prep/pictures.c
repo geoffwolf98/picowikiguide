@@ -38,6 +38,9 @@
 #define STBI_NO_TGA
 #define STBI_MAX_DIMENSIONS 16384
 #include "stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STBI_WRITE_NO_STDIO
+#include "stb_image_write.h"
 
 #define MIN_ATTR   40		/* width/height attributes below: an icon */
 #define MIN_SIDE   24		/* converted pictures smaller than this: dropped */
@@ -87,7 +90,15 @@ static art_t *arts;
 static uint32_t narts, arts_cap;
 static ref_t *refs;
 static uint32_t nrefs, refs_cap;
-static uint32_t nconverted;
+static uint32_t nconverted, ncolour;
+static int g_colour, g_quality = 75;
+
+void pictures_colour(int on, int quality)
+{
+	g_colour = on;
+	if (quality >= 10 && quality <= 100)
+		g_quality = quality;
+}
 
 static void *grow(void *p, uint32_t *cap, uint32_t need, size_t elem)
 {
@@ -496,6 +507,7 @@ typedef struct job {
 	uint8_t *rec;		/* the record (header + data), or NULL */
 	uint32_t rec_len;
 	uint16_t w, h;
+	uint8_t colour;		/* rec is a colour (JPEG) record */
 } job_t;
 
 static void fit(int sw, int sh, int *tw, int *th)
@@ -543,6 +555,79 @@ static uint8_t *to_grey(const uint8_t *rgba, int sw, int sh, int tw, int th)
 		}
 	}
 	return g;
+}
+
+/* RGBA (any size) -> RGB at tw x th, white behind transparency, by area
+ * averaging */
+static uint8_t *to_rgb(const uint8_t *rgba, int sw, int sh, int tw, int th)
+{
+	uint8_t *o = malloc((size_t)tw * th * 3);
+	int x, y;
+	for (y = 0; y < th; ++y) {
+		int y0 = y * sh / th, y1 = (y + 1) * sh / th;
+		if (y1 <= y0)
+			y1 = y0 + 1;
+		for (x = 0; x < tw; ++x) {
+			int x0 = x * sw / tw, x1 = (x + 1) * sw / tw, i, j, c;
+			uint32_t sum[3] = { 0, 0, 0 }, cnt = 0;
+			if (x1 <= x0)
+				x1 = x0 + 1;
+			for (j = y0; j < y1; ++j)
+				for (i = x0; i < x1; ++i) {
+					const uint8_t *q = rgba + ((size_t)j * sw + i) * 4;
+					for (c = 0; c < 3; ++c)
+						sum[c] += (q[c] * q[3] + 255u * (255u - q[3])) / 255u;
+					cnt++;
+				}
+			for (c = 0; c < 3; ++c)
+				o[((size_t)y * tw + x) * 3 + c] = (uint8_t)(sum[c] / cnt);
+		}
+	}
+	return o;
+}
+
+typedef struct mbuf {
+	uint8_t *p;
+	size_t n, cap;
+} mbuf_t;
+
+static void mbuf_put(void *ctx, void *data, int size)
+{
+	mbuf_t *m = ctx;
+	if (m->n + (size_t)size > m->cap) {
+		m->cap = (m->n + (size_t)size) * 2;
+		m->p = realloc(m->p, m->cap);
+	}
+	memcpy(m->p + m->n, data, (size_t)size);
+	m->n += (size_t)size;
+}
+
+/* a colour record (format 2: baseline JPEG), at the quality asked for or
+ * lower until it fits the PicoCalc's buffer; 0 if it never does */
+static int colour_record(job_t *j, const uint8_t *rgb, int tw, int th)
+{
+	static const int fallback[] = { 60, 45, 30, 20 };
+	int q = g_quality, k = -1;
+	for (;;) {
+		mbuf_t m = { NULL, 0, 0 };
+		mbuf_put(&m, "\0\0\0\0\0\0\0\0", 8);
+		if (stbi_write_jpg_to_func(mbuf_put, &m, tw, th, 3, rgb, q) && m.n - 8 <= PIC_ZMAX) {
+			zw_wr16(m.p, (uint16_t)tw);
+			zw_wr16(m.p + 2, (uint16_t)th);
+			m.p[4] = 2;
+			j->rec = m.p;
+			j->rec_len = (uint32_t)m.n;
+			j->colour = 1;
+			return 1;
+		}
+		free(m.p);
+		do
+			k++;
+		while (k < 4 && fallback[k] >= q);
+		if (k >= 4)
+			return 0;
+		q = fallback[k];
+	}
 }
 
 static float lin(int code)
@@ -647,6 +732,17 @@ static void convert(job_t *j)
 		cfg.output.colorspace = MODE_RGBA;
 		if (WebPDecode(j->raw, j->raw_len, &cfg) != VP8_STATUS_OK)
 			return;
+		if (g_colour) {
+			uint8_t *rgb = to_rgb(cfg.output.u.RGBA.rgba, tw, th, tw, th);
+			int ok = colour_record(j, rgb, tw, th);
+			free(rgb);
+			if (ok) {
+				WebPFreeDecBuffer(&cfg.output);
+				j->w = (uint16_t)tw;
+				j->h = (uint16_t)th;
+				return;
+			}
+		}
 		g = to_grey(cfg.output.u.RGBA.rgba, tw, th, tw, th);
 		WebPFreeDecBuffer(&cfg.output);
 	} else {
@@ -658,6 +754,17 @@ static void convert(job_t *j)
 		if (tw < MIN_SIDE || th < MIN_SIDE) {
 			stbi_image_free(rgba);
 			return;
+		}
+		if (g_colour) {
+			uint8_t *rgb = to_rgb(rgba, sw, sh, tw, th);
+			int ok = colour_record(j, rgb, tw, th);
+			free(rgb);
+			if (ok) {
+				stbi_image_free(rgba);
+				j->w = (uint16_t)tw;
+				j->h = (uint16_t)th;
+				return;
+			}
 		}
 		g = to_grey(rgba, sw, sh, tw, th);
 		stbi_image_free(rgba);
@@ -901,6 +1008,7 @@ long pictures_make(zim_t *z, const char *input, const char *base, int mode, int 
 				bytes_out += j->rec_len;
 				raw_total += 8u + (uint32_t)(((j->w * 2 + 7) >> 3) * j->h);
 				nconverted++;
+				ncolour += j->colour;
 				free(j->rec);
 			}
 			free(j->raw);
@@ -925,9 +1033,12 @@ long pictures_make(zim_t *z, const char *input, const char *base, int mode, int 
 	for (i = 0; i < 100; ++i)
 		if (w.fd[i] >= 0)
 			close(w.fd[i]);
-	fprintf(stderr, "pictures: %u (%u could not be used), %llu bytes in %s.I00... "
-		"(%llu before compression)\n", nconverted, nimgs - nconverted,
-		(unsigned long long)w.size, base, (unsigned long long)raw_total);
+	fprintf(stderr, "pictures: %u (%u could not be used%s), %llu bytes in %s.I00...",
+		nconverted, nimgs - nconverted, "", (unsigned long long)w.size, base);
+	if (g_colour)
+		fprintf(stderr, " (%u in colour, the rest grey)\n", ncolour);
+	else
+		fprintf(stderr, " (%llu before compression)\n", (unsigned long long)raw_total);
 	free(order);
 	free(pool.jobs);
 	free(table);

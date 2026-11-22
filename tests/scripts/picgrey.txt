@@ -1,0 +1,24 @@
+# grey pictures (TOP100G: zimprep -n TOP100G --pictures all, no --colour;
+# the third wiki on the test card)
+key down down enter
+expect search
+type elvis presley
+key enter
+expect article "Elvis Presley" page=1/
+key down
+expect pics=1 shown=1 colour=0
+key down
+expectnot pics=
+# the same picture again (from the buffer), and after another one
+key up
+expect pics=1 shown=1 colour=0
+key f1 f1
+type cat
+key enter
+key f1 f1
+type elvis presley
+key enter
+key down
+expect pics=1 shown=1 colour=0
+mem
+expectmem whole
