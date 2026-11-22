@@ -340,10 +340,22 @@ static void do_article(worker_t *w, uint32_t art, art_out_t *o, int raw)
 		 * apart from its caption (it goes to the next page with it) */
 		if (j < l.nlines) {
 			uint32_t j0 = j;
-			while (j - 1 > i && (heading_level(l.lines[j - 1].kind) ||
-					     l.lines[j - 1].kind == BK_TITLE || is_blank(&l.lines[j - 1]) ||
-					     (l.lines[j - 1].deco == LD_PIC && l.lines[j].kind == BK_PICCAP)))
-				j--;
+			while (j - 1 > i) {
+				const lay_line_t *prev = &l.lines[j - 1];
+				if (prev->deco == LD_PIC && l.lines[j].kind == BK_PICCAP) {
+					j--;	/* the picture goes with its caption */
+					continue;
+				}
+				/* the next page starts with a picture: a heading may end
+				 * this one (moving it on would only leave a gap) */
+				if (l.lines[j].deco == LD_PIC)
+					break;
+				if (heading_level(prev->kind) || prev->kind == BK_TITLE || is_blank(prev)) {
+					j--;
+					continue;
+				}
+				break;
+			}
 			/* but not down to a page of nothing but a heading (a heading
 			 * followed by a picture too tall to share the page): then the
 			 * whole heading stays here and the picture goes on */
@@ -394,7 +406,7 @@ static void do_article(worker_t *w, uint32_t art, art_out_t *o, int raw)
 			/* ended early for a picture that did not fit: say so */
 			const char *note = NULL;
 			if (j < l.nlines && j > i && l.lines[j].deco == LD_PIC &&
-			    PAGE_H - (l.lines[j - 1].y + l.lines[j - 1].h - top) >= 40)
+			    PAGE_H - (l.lines[j - 1].y + l.lines[j - 1].h - top) >= 20)
 				note = NOTE_PIC;
 			encode_page(&pg, &l, &d, linkmap, i, j, note);
 		}
