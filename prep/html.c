@@ -1793,6 +1793,54 @@ static void drop_empty_sections(doc_t *d)
 	d->nblocks = o;
 }
 
+/* a block's text, lower case, spaces squeezed, up to cap - 1 bytes */
+static uint32_t block_key(const doc_t *d, const doc_block_t *b, char *t, uint32_t cap)
+{
+	uint32_t n = 0, i, k;
+	for (i = 0; i < b->nruns; ++i) {
+		const doc_run_t *r = &d->runs[b->first_run + i];
+		for (k = 0; k < r->len && n < cap - 1; ++k) {
+			char c = d->text[r->start + k];
+			if (c == ' ' || c == '\t' || c == '\n') {
+				if (n && t[n - 1] != ' ')
+					t[n++] = ' ';
+				continue;
+			}
+			t[n++] = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c);
+		}
+	}
+	while (n && t[n - 1] == ' ')
+		n--;
+	t[n] = 0;
+	return n;
+}
+
+/* an infobox starts with a row naming the subject ("infobox-above"),
+ * which beside the text on a web page is fine but here is the title
+ * again under the title, pushing the lead picture off the first page:
+ * drop the first table row before any text if it is just the title */
+static void drop_title_repeat(doc_t *d)
+{
+	char title[256], row[256];
+	uint32_t i, t;
+	for (t = 0; t < d->nblocks && d->blocks[t].kind != BK_TITLE; ++t)
+		;
+	if (t >= d->nblocks || !block_key(d, &d->blocks[t], title, sizeof(title)))
+		return;
+	for (i = t + 1; i < d->nblocks && i < t + 4; ++i) {
+		doc_block_t *b = &d->blocks[i];
+		if (b->kind == BK_PARA || b->kind == BK_H2 || b->kind == BK_H3 || b->kind == BK_H4)
+			return;		/* the text has started */
+		if (b->kind == BK_ROW) {
+			if (block_key(d, b, row, sizeof(row)) && strcmp(row, title) == 0) {
+				memmove(b, b + 1, (d->nblocks - i - 1) * sizeof(*b));
+				d->nblocks--;
+			}
+			return;
+		}
+	}
+}
+
 int html_to_doc(doc_t *d, const char *html, uint32_t len,
 		char base_ns, const char *base_url, int new_ns)
 {
@@ -1951,6 +1999,7 @@ int html_to_doc(doc_t *d, const char *html, uint32_t len,
 	end_block(p);
 	zw_free(tbuf);
 	drop_empty_sections(d);
+	drop_title_repeat(d);
 	r = p->err;
 	zw_free(p);
 	return r;

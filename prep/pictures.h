@@ -31,6 +31,11 @@ void pictures_for(uint32_t entry, pic_set_t *s);
  * to 100 (lowered for a picture until it fits the PicoCalc's buffer) */
 void pictures_colour(int on, int quality);
 
+/* the tallest a picture may be, MIN_SIDE .. PWG_PIC_MAX_H (default the
+ * most): lower lets a portrait lead picture share the first page with
+ * the title */
+void pictures_max_height(int h);
+
 /* totals for the TOC header and the summary */
 uint32_t pictures_count(void);
 

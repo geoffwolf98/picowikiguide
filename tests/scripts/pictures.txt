@@ -1,11 +1,10 @@
-# a wiki with pictures (TOP100: zimprep --pictures all;
+# a wiki with pictures (TOP100: zimprep --pictures all --colour --pic-height 220;
 # the second wiki on the test card)
 key down enter
 expect search
 type elvis presley
 key enter
 expect article "Elvis Presley" page=1/
-key down
 expect pics=1 shown=1 colour=1
 key down
 expectnot pics=
@@ -18,7 +17,6 @@ key enter
 key f1 f1
 type elvis presley
 key enter
-key down
 expect pics=1 shown=1 colour=1
 mem
 expectmem whole

@@ -92,6 +92,13 @@ static ref_t *refs;
 static uint32_t nrefs, refs_cap;
 static uint32_t nconverted, ncolour;
 static int g_colour, g_quality = 75;
+static int g_max_h = PWG_PIC_MAX_H;
+
+void pictures_max_height(int h)
+{
+	if (h >= MIN_SIDE && h <= PWG_PIC_MAX_H)
+		g_max_h = h;
+}
 
 void pictures_colour(int on, int quality)
 {
@@ -515,8 +522,8 @@ static void fit(int sw, int sh, int *tw, int *th)
 	double s = 1.0;
 	if (sw > PWG_PIC_MAX_W)
 		s = (double)PWG_PIC_MAX_W / sw;
-	if (sh * s > PWG_PIC_MAX_H)
-		s = (double)PWG_PIC_MAX_H / sh;
+	if (sh * s > g_max_h)
+		s = (double)g_max_h / sh;
 	*tw = (int)(sw * s + 0.5);
 	*th = (int)(sh * s + 0.5);
 	if (*tw < 1)
@@ -525,8 +532,8 @@ static void fit(int sw, int sh, int *tw, int *th)
 		*th = 1;
 	if (*tw > PWG_PIC_MAX_W)
 		*tw = PWG_PIC_MAX_W;
-	if (*th > PWG_PIC_MAX_H)
-		*th = PWG_PIC_MAX_H;
+	if (*th > g_max_h)
+		*th = g_max_h;
 }
 
 /* RGBA (any size) -> grey (sRGB codes) at tw x th, white behind

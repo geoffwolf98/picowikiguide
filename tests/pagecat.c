@@ -266,7 +266,7 @@ int main(int argc, char **argv)
 		}
 	}
 	if (strcmp(argv[2], "--check") == 0) {
-		uint32_t bad = 0, pages = 0, maxlines = 0, maxitems = 0, maxlinks = 0, headonly = 0, half = 0;
+		uint32_t bad = 0, pages = 0, maxlines = 0, maxitems = 0, maxlinks = 0, headonly = 0, half = 0, half1 = 0;
 		for (art = 0; art < w.articles; ++art) {
 			if (wiki_article(&w, art, &a) < 0) {
 				bad++;
@@ -296,8 +296,10 @@ int main(int argc, char **argv)
 					int last = pg.nlines - 1;
 					if (last > 0 && pg.lines[last].y == PAGE_H - 17)
 						last--;
-					if (pg.lines[last].y + pg.lines[last].h < PAGE_H / 2)
+					if (pg.lines[last].y + pg.lines[last].h < PAGE_H / 2) {
 						half++;
+						half1 += page == 0;
+					}
 				}
 				if (pg.nlines > maxlines) maxlines = pg.nlines;
 				if (pg.nitems > maxitems) maxitems = pg.nitems;
@@ -308,7 +310,8 @@ int main(int argc, char **argv)
 		       w.articles, pages, bad, maxlines, maxitems, maxlinks);
 		if (headonly)
 			printf("%u pages with only a heading\n", headonly);
-		printf("%u pages (not an article's last) less than half full\n", half);
+		printf("%u pages (not an article's last) less than half full, %u of them first pages\n",
+		       half, half1);
 		printf("title \"%s\", name %s, language %s, date %s, main %u\n",
 		       w.title, w.name, w.lang, w.date, w.main);
 		return bad != 0 || headonly != 0;

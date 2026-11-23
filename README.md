@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.8.0 (22 Nov 2026): colour pictures (zimprep --colour).
+Version 0.8.1 (23 Nov 2026): no repeated title on first pages; zimprep --pic-height.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.8.0.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.8.1.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -96,7 +96,7 @@ A "card" is a folder laid out like the SD card: one folder per wiki, plus
 `PWGSTATE.DAT`. zimprep makes both:
 
 ```
-build/zimprep -n TOP100 --pictures all --colour wikipedia_en_100_2026-08.zim ~/card
+build/zimprep -n TOP100 --pictures all --colour --pic-height 220 wikipedia_en_100_2026-08.zim ~/card
 build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
 ```
 
@@ -124,6 +124,11 @@ build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
   (RGB332 with ordered dithering). `--jpeg-quality N` (default 75) trades
   size for quality; a picture is made smaller until it fits the
   PicoCalc's buffer. Firmware before 0.8.0 shows an outline instead.
+* `--pic-height N` (with `--pictures`): the tallest a picture may be, 24
+  to 255 pixels (default 255). 220 lets most portrait lead pictures share
+  the first page with the title and caption (TOP100: half-empty first
+  pages 46 at 255, 24 at 220, 7 at 200), and makes pictures a little
+  smaller on the card.
 
 Each run writes `~/card/NAME/` (`NAME.TOC`, `NAME.P00`..., `NAME.IDX`,
 `NAME.HIS`, `NAME.FAV`, and with pictures `NAME.I00`...) and, if it is not there yet, `~/card/PWGSTATE.DAT`.
@@ -288,6 +293,11 @@ every title and prefixes of it with several index summary steps.
   colour; it replaces the 20 KB grey one, so about 60 KB less is free.
   The hardware test shows red, green and blue bars to check the panel's
   colour order. TOP100 in the card zip is in colour.
+* 0.8.1: zimprep drops an infobox's first row when it only repeats the
+  article's title (Wikipedia's "infobox-above": the name again under the
+  name, which pushed the lead picture off the first page). New
+  `--pic-height N`. TOP100 in the card zip uses `--pic-height 220`.
+  Remake picture wikis to get both.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

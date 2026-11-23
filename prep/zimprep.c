@@ -277,6 +277,7 @@ static int is_blank(const lay_line_t *ln)
 
 static int g_pics;		/* PICS_NONE, PICS_LEAD, PICS_ALL */
 static int g_colour, g_jpeg_q = 75;	/* --colour, --jpeg-quality */
+static int g_pic_h = 255;		/* --pic-height */
 
 /* lay out article number `art` and turn it into frames.  With raw set,
  * the frames are left uncompressed (dictionary samples). */
@@ -812,6 +813,11 @@ int main(int argc, char **argv)
 			g_colour = 1;
 		else if (strcmp(argv[a], "--jpeg-quality") == 0 && a + 1 < argc)
 			g_jpeg_q = atoi(argv[++a]);
+		else if (strcmp(argv[a], "--pic-height") == 0 && a + 1 < argc) {
+			g_pic_h = atoi(argv[++a]);
+			if (g_pic_h < 24 || g_pic_h > 255)
+				die("--pic-height takes 24 to 255, not %s", argv[a]);
+		}
 		else if (argv[a][0] == '-')
 			die("unknown option %s", argv[a]);
 		else if (!input)
@@ -823,7 +829,8 @@ int main(int argc, char **argv)
 	}
 	if (!input || !outdir) {
 		fprintf(stderr, "usage: zimprep [-n NAME] [--threads N] [--level N] [--dict-kb N] "
-			"[--pictures none|lead|all [--colour] [--jpeg-quality N]] INPUT.zim OUTDIR\n");
+			"[--pictures none|lead|all [--colour] [--jpeg-quality N] [--pic-height N]]\n"
+			"       INPUT.zim OUTDIR\n");
 		return 2;
 	}
 	if (!name[0])
@@ -913,6 +920,7 @@ int main(int argc, char **argv)
 
 	/* pictures first: the layout needs their sizes */
 	pictures_colour(g_colour, g_jpeg_q);
+	pictures_max_height(g_pic_h);
 	if (pictures_make(&g_zim, input, g_base, g_pics, g_nthreads) < 0)
 		die("could not make the pictures%s", "");
 
