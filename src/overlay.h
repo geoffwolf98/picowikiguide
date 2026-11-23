@@ -15,7 +15,7 @@
 
 #include "zw.h"
 
-#define OV_MAX 8
+#define OV_MAX 16
 
 typedef struct overlay {
 	int16_t x, y;

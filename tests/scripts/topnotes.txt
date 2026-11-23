@@ -3,11 +3,11 @@
 key down enter
 type evolution
 key enter
-key down
+key space
 expect page=2/
 idle
 expect note="Saved position"
-key down
+key space
 expectnot note=
 expect page=3/
 offin 60000
@@ -16,10 +16,10 @@ offin 9500
 expect switchoff=10
 offin 3200
 expect switchoff=4
-key down
+key space
 expectnot switchoff
 expect page=3/
 offin 300000
 expectnot switchoff
-key down
+key space
 expect page=4/

@@ -4,7 +4,7 @@ type evolution
 key enter
 key *
 expect fav
-key down down down
+key space space space
 expect page=4/
 key f1 f1
 type charlie chaplin
@@ -14,7 +14,7 @@ key f2 tab
 expect favourites n=1
 key enter
 expect article "Evolution" page=4/
-key down down
+key space space
 expect page=6/
 key f2 tab enter
 expect page=6/

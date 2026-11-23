@@ -94,9 +94,28 @@ uint8_t *wiki_scratch(uint32_t *len);
 /* the wiki's pictures (NAME.I00 ..., opened by the platform when
  * w->pic_count is not 0); checks the file's header */
 int wiki_set_pictures(wiki_t *w, const zw_io_t *io);
+/* page into a buffer of the caller's (FRAME_MAX bytes; the page's text
+ * points into it), leaving the wiki's own frame buffer alone */
+int wiki_page_into(wiki_t *w, const wiki_art_t *a, uint32_t page, page_t *pg, uint8_t *buf);
+/* how far down a page's content goes (without the "picture on the next
+ * page" note): where the next page joins it when scrolling */
+int page_content_h(const page_t *pg);
 /* draw the page's pictures (after page_draw); a picture that cannot be
  * read is drawn as an outline */
 void wiki_draw_pictures(wiki_t *w, const page_t *pg, uint8_t *fb, int y0);
+/* the pictures of the pages in view: each page drawn at y0, shown only
+ * between screen rows clip0 and clip1 (a scrolled view has two) */
+typedef struct view_page {
+	const page_pic_t *pics;
+	int npics;
+	int y0, clip0, clip1;
+} view_page_t;
+void wiki_draw_view_pictures(wiki_t *w, const view_page_t *v, int nv, uint8_t *fb);
+/* room for a frame and a page_t, for a page that is only drawn (a third
+ * page in a scrolled view): the free end of the picture buffer, or all
+ * of it (the cached pictures dropped) if the end is too small; valid
+ * until the next picture is loaded */
+void wiki_draw_scratch(uint8_t **frame, page_t **pg);
 /* 1 if the picture can be read and is the size the page says (tests) */
 int wiki_picture_ok(wiki_t *w, const page_pic_t *pp);
 /* called before a wiki_open() that has to write the dictionary to flash

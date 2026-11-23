@@ -13,7 +13,7 @@
 # it read with the PicoCalc's own file code (IMG=0 to skip).
 set -e
 CARD=${CARD:?set CARD to the test card folder}
-export PWG_HEAP=${PWG_HEAP:-118212}
+export PWG_HEAP=${PWG_HEAP:-92840}
 fail=0
 run_scripts() {	# $1: program, $2: card or image, $3: label
 	for s in tests/scripts/*.txt; do

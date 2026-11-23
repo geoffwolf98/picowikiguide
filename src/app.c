@@ -84,10 +84,15 @@ static struct app {
 	int have_art;
 	uint32_t art;
 	wiki_art_t a;
-	uint32_t page;
+	uint32_t page;		/* the page at the top of the screen */
 	page_t pg;
+	int yoff;		/* scrolled this far into it (pixels) */
+	int h1;			/* how far its content goes */
+	page_t pg2;		/* the page after it, joined below */
+	int page2;		/* its number, -1 none */
 	char title[REC_TITLE * 2];
 	int focus;		/* focused item, -1 none */
+	int focus_pg;		/* ... on pg (0) or pg2 (1) */
 	back_t back[BACK_MAX];
 	int nback;
 
@@ -332,7 +337,7 @@ static int on_article(void)
 
 /* PWGSTATE.DAT: u32 magic, name[16], u32 article, u16 page, u8 have
  * article, u8 on search (since 0.5.8), double calc ans, u8 radians,
- * query[64] at 48, u16 selected row at 112 */
+ * query[64] at 48, u16 selected row at 112, u16 scroll offset at 114 */
 static void write_state(const char *name, int keep_art)
 {
 	uint8_t b[STATE_SIZE];
@@ -351,6 +356,7 @@ static void write_state(const char *name, int keep_art)
 	if (keep_art) {
 		memcpy(b + 48, A.query, QUERY_MAX);
 		zw_wr16(b + 112, (uint16_t)A.sel);
+		zw_wr16(b + 114, (uint16_t)A.yoff);	/* scrolled into the page (0.9.0) */
 	}
 	plat_save(STATE_FILE, b, sizeof(b));
 }
@@ -548,18 +554,186 @@ static void read_title(uint32_t art, const wiki_art_t *a, char *out, size_t cap)
 	(void)art;
 }
 
+/* the page after the top one, into a buffer of its own (scrolling shows
+ * them joined: the second starts where the first's content ends) */
+static uint8_t s_frame2[FRAME_MAX];
+
+static void load_below(void)
+{
+	A.h1 = page_content_h(&A.pg);
+	A.page2 = -1;
+	A.pg2.nlines = A.pg2.nitems = A.pg2.nlinks = A.pg2.npics = 0;
+	if (A.page + 1 < A.a.pages &&
+	    wiki_page_into(&A.w, &A.a, A.page + 1, &A.pg2, s_frame2) == 0)
+		A.page2 = (int)A.page + 1;
+}
+
+/* page at the top of the screen, from its top */
 static int load_page(uint32_t page)
 {
 	if (page >= A.a.pages)
 		page = A.a.pages ? A.a.pages - 1 : 0;
+	A.yoff = 0;
+	A.focus = -1;
 	if (!A.a.pages || wiki_page(&A.w, &A.a, page, &A.pg) < 0) {
-		A.pg.nlines = A.pg.nitems = A.pg.nlinks = 0;
+		A.pg.nlines = A.pg.nitems = A.pg.nlinks = A.pg.npics = 0;
 		A.page = 0;
+		A.h1 = 0;
+		A.page2 = -1;
 		return -1;
 	}
 	A.page = page;
-	A.focus = -1;
+	load_below();
 	return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* scrolling: the screen shows the top page from yoff, then the next one
+ * joined below; Up and Down move to the next line's top, at most a third
+ * of a screen at a time (a tall picture goes by in steps) */
+
+#define STEP_MAX (PAGE_H / 3)
+
+/* where on the screen (from the top of the text area) a line of the top
+ * page (which 0) or the next page (1) is */
+static int line_rel(int which, const page_line_t *ln)
+{
+	return which ? A.h1 - A.yoff + ln->y : ln->y - A.yoff;
+}
+
+/* down by up to cap pixels, to the next line's top or (part: a key
+ * press) part way through something taller than cap; returns how far it
+ * went */
+static int step_down_x(int cap, int part)
+{
+	int i, t = -1;
+	for (i = 0; i < (int)A.pg.nlines; ++i) {
+		const page_line_t *ln = &A.pg.lines[i];
+		if (ln->y > A.yoff && ln->y < A.h1) {
+			t = ln->y;
+			break;
+		}
+	}
+	if (t >= 0) {
+		int d = t - A.yoff;
+		if (d > cap) {
+			if (!part)
+				return 0;
+			d = cap;
+		}
+		A.yoff += d;
+		return d;
+	}
+	/* no line of this page starts below: on to the next page's top */
+	if (A.h1 - A.yoff > cap) {
+		if (!part)
+			return 0;
+		A.yoff += cap;	/* inside something tall at the end */
+		return cap;
+	}
+	if (A.page2 < 0)
+		return 0;	/* the end */
+	{
+		int d = A.h1 - A.yoff;
+		load_page((uint32_t)A.page2);
+		return d > 0 ? d : 1;
+	}
+}
+
+static int step_down(int cap)
+{
+	return step_down_x(cap, 1);
+}
+
+/* up by up to cap pixels (part: as step_down_x); returns how far */
+static int step_up_x(int cap, int part)
+{
+	int i, t = -1;
+	for (i = (int)A.pg.nlines - 1; i >= 0; --i) {
+		const page_line_t *ln = &A.pg.lines[i];
+		if (ln->y < A.yoff && ln->y < A.h1) {
+			t = ln->y;
+			break;
+		}
+	}
+	if (A.yoff > 0) {
+		int d = t >= 0 ? A.yoff - t : A.yoff;
+		if (d > cap) {
+			if (!part)
+				return 0;
+			d = cap;
+		}
+		A.yoff -= d;
+		return d;
+	}
+	if (A.page == 0)
+		return 0;	/* the start */
+	/* into the page before: its last line's top (or a cap from its end) */
+	{
+		uint32_t back = A.page;
+		load_page(A.page - 1);
+		t = -1;
+		for (i = (int)A.pg.nlines - 1; i >= 0; --i)
+			if (A.pg.lines[i].y < A.h1) {
+				t = A.pg.lines[i].y;
+				break;
+			}
+		if (t < 0)
+			t = 0;
+		if (A.h1 - t > cap) {
+			if (!part) {
+				load_page(back);	/* stay */
+				return 0;
+			}
+			t = A.h1 - cap;
+		}
+		A.yoff = t;
+		return A.h1 - t > 0 ? A.h1 - t : 1;
+	}
+}
+
+static int step_up(int cap)
+{
+	return step_up_x(cap, 1);
+}
+
+/* a screen at a time (Space, Shift+Space): line steps adding up to at
+ * most a screen, so no line is skipped */
+static void screen_down(void)
+{
+	int left = PAGE_H, d;
+	while (left > 0 && (d = step_down_x(left, 0)) > 0)
+		left -= d;
+	if (left == PAGE_H)
+		step_down_x(PAGE_H, 1);	/* a line taller than the screen */
+}
+
+static void screen_up(void)
+{
+	int left = PAGE_H, d;
+	while (left > 0 && (d = step_up_x(left, 0)) > 0)
+		left -= d;
+	if (left == PAGE_H)
+		step_up_x(PAGE_H, 1);
+}
+
+/* is a line wholly on the screen? */
+static int line_shown(int which, const page_line_t *ln)
+{
+	int r = line_rel(which, ln);
+	if (which && A.page2 < 0)
+		return 0;
+	if (!which && ln->y >= A.h1)
+		return 0;	/* the note under the content */
+	return r >= 0 && r + ln->h <= PAGE_H;
+}
+
+static void drop_hidden_focus(void)
+{
+	const page_t *pg = A.focus_pg ? &A.pg2 : &A.pg;
+	if (A.focus >= 0 && (A.focus >= (int)pg->nitems ||
+			     !line_shown(A.focus_pg, &pg->lines[pg->items[A.focus].line])))
+		A.focus = -1;
 }
 
 /* keep the page you are on in the article's History and Favourites
@@ -668,22 +842,35 @@ static void go_back(void)
 	}
 }
 
-/* links on the page: the first item of each link */
-static int link_start(int k)
+/* links on the screen: the first item of each, on lines wholly shown,
+ * the top page's then the next page's */
+static int link_start(int which, int k)
 {
-	const page_item_t *it = &A.pg.items[k];
-	return it->slot != PI_NOLINK && (k == 0 || A.pg.items[k - 1].slot != it->slot);
+	const page_t *pg = which ? &A.pg2 : &A.pg;
+	const page_item_t *it = &pg->items[k];
+	return it->slot != PI_NOLINK && (k == 0 || pg->items[k - 1].slot != it->slot) &&
+	       line_shown(which, &pg->lines[it->line]);
 }
 
 static void focus_move(int dir)
 {
-	int k = A.focus;
+	int which = A.focus_pg, k = A.focus;
+	if (k < 0)
+		which = dir > 0 ? 0 : 1;
 	for (;;) {
-		k = k < 0 ? (dir > 0 ? 0 : (int)A.pg.nitems - 1) : k + dir;
-		if (k < 0 || k >= (int)A.pg.nitems)
-			return;	/* stay on the last one */
-		if (link_start(k)) {
+		const page_t *pg = which ? &A.pg2 : &A.pg;
+		k = k < 0 ? (dir > 0 ? 0 : (int)pg->nitems - 1) : k + dir;
+		if (k < 0 || k >= (int)pg->nitems) {
+			/* on to the other page, or stay on the last one */
+			if ((dir > 0 && which == 1) || (dir < 0 && which == 0))
+				return;
+			which += dir;
+			k = -1;
+			continue;
+		}
+		if (link_start(which, k)) {
 			A.focus = k;
+			A.focus_pg = which;
 			return;
 		}
 	}
@@ -691,10 +878,11 @@ static void focus_move(int dir)
 
 static void follow(void)
 {
+	const page_t *pg = A.focus_pg ? &A.pg2 : &A.pg;
 	uint32_t t;
-	if (A.focus < 0 || A.pg.items[A.focus].slot == PI_NOLINK)
+	if (A.focus < 0 || A.focus >= (int)pg->nitems || pg->items[A.focus].slot == PI_NOLINK)
 		return;
-	t = A.pg.links[A.pg.items[A.focus].slot];
+	t = pg->links[pg->items[A.focus].slot];
 	if (t < A.w.articles)
 		open_article(t, 0, 1);
 }
@@ -749,6 +937,7 @@ static void find_all(void)
 	static uint16_t starts[PAGE_MAX_ITEMS];
 	size_t kl = fold_utf8(A.fquery, strlen(A.fquery), key, sizeof(key) - 1);
 	uint32_t p, keep = A.page;
+	int keep_y = A.yoff;
 	A.nhits = 0;
 	A.hit = -1;
 	A.searched = 1;
@@ -783,6 +972,31 @@ static void find_all(void)
 		}
 	}
 	load_page(keep);
+	A.yoff = keep_y;
+}
+
+/* scroll a match into view: its line near the top, with the line
+ * before it for context */
+static void show_hit(void)
+{
+	const page_item_t *it;
+	int l, y = 0;
+	if (A.hits[A.hit].page != A.page && !(A.hits[A.hit].page == A.page2))
+		load_page(A.hits[A.hit].page);
+	if (A.hits[A.hit].page != A.page) {
+		/* on the next page: shown already? */
+		it = &A.pg2.items[A.hits[A.hit].first];
+		if (line_shown(1, &A.pg2.lines[it->line]))
+			return;
+		load_page(A.hits[A.hit].page);
+	}
+	it = &A.pg.items[A.hits[A.hit].first];
+	if (line_shown(0, &A.pg.lines[it->line]))
+		return;
+	l = it->line;
+	if (l > 0)
+		y = A.pg.lines[l - 1].y;
+	A.yoff = y < A.h1 ? y : 0;
 }
 
 static void find_step(int dir)
@@ -806,34 +1020,93 @@ static void find_step(int dir)
 	} else {
 		A.hit = (A.hit + dir + A.nhits) % A.nhits;
 	}
-	if (A.hits[A.hit].page != A.page)
-		load_page(A.hits[A.hit].page);
+	show_hit();
 }
 
 /* ------------------------------------------------------------------ */
 /* screens: drawing */
 
+/* a find match: light grey behind black text (sharper than inverted) */
+static void draw_hit(const page_t *pg, int y0)
+{
+	unsigned k;
+	for (k = A.hits[A.hit].first; k <= A.hits[A.hit].last; ++k) {
+		int x, y, w, h;
+		const page_item_t *it = &pg->items[k];
+		const page_line_t *ln = &pg->lines[it->line];
+		page_item_rect(pg, k, &x, &y, &w, &h);
+		gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, x - 1, y0 + y, w + 2, h, SHADE);
+		font_draw(A.fb, SCREEN_STRIDE, SCREEN_H, it->x, y0 + ln->y + ln->base + it->dy,
+			  it->font, it->text, it->len, BLACK);
+	}
+}
+
+#define VIEW_MAX 5
+
 static void draw_article(void)
 {
 	char r[24];
-	int barh = 0;
-	snprintf(r, sizeof(r), "%s%u / %u", is_fav(A.art) ? "* " : "", A.page + 1, A.a.pages);
-	topbar(A.title, r);
-	page_draw(&A.pg, A.fb, PAGE_TOP, A.focus);
-	wiki_draw_pictures(&A.w, &A.pg, A.fb, PAGE_TOP);
-	if (A.finding && A.hit >= 0 && A.hits[A.hit].page == A.page) {
-		unsigned k;
-		for (k = A.hits[A.hit].first; k <= A.hits[A.hit].last; ++k) {
-			int x, y, w, h;
-			const page_item_t *it = &A.pg.items[k];
-			const page_line_t *ln = &A.pg.lines[it->line];
-			page_item_rect(&A.pg, k, &x, &y, &w, &h);
-			/* a find match: light grey behind black text (sharper than inverted) */
-			gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, x - 1, PAGE_TOP + y, w + 2, h, SHADE);
-			font_draw(A.fb, SCREEN_STRIDE, SCREEN_H, it->x, PAGE_TOP + ln->y + ln->base + it->dy,
-				  it->font, it->text, it->len, BLACK);
+	int barh = 0, y0 = PAGE_TOP - A.yoff, cut = PAGE_TOP + A.h1 - A.yoff, nv = 1;
+	/* the top page, the one joined below and, if that is short (a gap
+	 * before a picture that went on to the next page), more pages until
+	 * the screen is full; those are only drawn (no links or find) */
+	static page_pic_t xpics[VIEW_MAX - 2][PAGE_MAX_PICS];
+	view_page_t v[VIEW_MAX];
+	/* the top page from yoff; where its content ends the next page joins
+	 * (the rest of the top page, e.g. a "picture on the next page" note,
+	 * is cleared away first) */
+	page_draw(&A.pg, A.fb, y0, A.focus_pg == 0 ? A.focus : -1);
+	if (cut < PAGE_TOP)
+		cut = PAGE_TOP;
+	v[0].pics = A.pg.pics;
+	v[0].npics = A.pg.npics;
+	v[0].y0 = y0;
+	v[0].clip0 = PAGE_TOP;
+	v[0].clip1 = cut < SCREEN_H ? cut : SCREEN_H;
+	if (cut < SCREEN_H) {
+		gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, cut, SCREEN_W, SCREEN_H - cut, WHITE);
+		if (A.page2 >= 0) {
+			int next = cut + page_content_h(&A.pg2);
+			uint32_t p = (uint32_t)A.page2 + 1;
+			page_draw(&A.pg2, A.fb, cut, A.focus_pg == 1 ? A.focus : -1);
+			v[1].pics = A.pg2.pics;
+			v[1].npics = A.pg2.npics;
+			v[1].y0 = cut;
+			v[1].clip0 = cut;
+			v[1].clip1 = SCREEN_H;
+			nv = 2;
+			while (next < SCREEN_H && p < A.a.pages && nv < VIEW_MAX) {
+				uint8_t *fr;
+				page_t *pg;
+				wiki_draw_scratch(&fr, &pg);
+				if (wiki_page_into(&A.w, &A.a, p, pg, fr) < 0)
+					break;
+				v[nv - 1].clip1 = next;
+				gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, next, SCREEN_W, SCREEN_H - next, WHITE);
+				page_draw(pg, A.fb, next, -1);
+				memcpy(xpics[nv - 2], pg->pics, pg->npics * sizeof(page_pic_t));
+				v[nv].pics = xpics[nv - 2];
+				v[nv].npics = pg->npics;
+				v[nv].y0 = next;
+				v[nv].clip0 = next;
+				v[nv].clip1 = SCREEN_H;
+				nv++;
+				next += page_content_h(pg);
+				p++;
+			}
 		}
 	}
+	wiki_draw_view_pictures(&A.w, v, nv, A.fb);
+	if (A.finding && A.hit >= 0) {
+		if (A.hits[A.hit].page == A.page)
+			draw_hit(&A.pg, y0);
+		else if ((int)A.hits[A.hit].page == A.page2 && cut < SCREEN_H)
+			draw_hit(&A.pg2, cut);
+	}
+	/* the top bar last, over anything scrolled up into it */
+	gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, 0, SCREEN_W, PAGE_TOP, WHITE);
+	snprintf(r, sizeof(r), "%s%u / %u", is_fav(A.art) ? "* " : "", A.page + 1, A.a.pages);
+	topbar(A.title, r);
 	if (A.finding) {
 		char s[48];
 		barh = 30;
@@ -925,7 +1198,7 @@ static void draw_help(void)
 	static const char *const lines[] = {
 		"F1 Search   F2 History   F3 Random",
 		"F4 Calculator   F5 This help",
-		"Up/Down  previous / next page  Space next",
+		"Up/Down scroll   Space / B screen on / back",
 		"Shift+Up/Down  previous / next section",
 		"Left/Right  previous / next link",
 		"Enter  follow link    Esc  back",
@@ -1148,13 +1421,24 @@ static void article_keys(int key, int mods)
 		return;
 	}
 	switch (key) {
-	case K_DOWN: case ' ':
-		if (A.page + 1 < A.a.pages)
-			load_page(A.page + 1);
+	case K_DOWN:
+		step_down(STEP_MAX);
+		drop_hidden_focus();
 		break;
 	case K_UP:
-		if (A.page > 0)
-			load_page(A.page - 1);
+		step_up(STEP_MAX);
+		drop_hidden_focus();
+		break;
+	case ' ':	/* a screen on; Shift+Space a screen back */
+		if (mods & KM_SHIFT)
+			screen_up();
+		else
+			screen_down();
+		drop_hidden_focus();
+		break;
+	case 'b': case 'B':
+		screen_up();
+		drop_hidden_focus();
 		break;
 	case K_PGDN:	/* Shift+Down on the PicoCalc */
 		section_jump(1);
@@ -1485,6 +1769,8 @@ void app_init(void)
 				A.screen = S_SEARCH;
 				if (st[26] && zw_rd32(st + 20) < A.w.articles) {
 					open_article(zw_rd32(st + 20), zw_rd16(st + 24), 0);
+					if (len >= 116 && zw_rd16(st + 114) < A.h1)
+						A.yoff = zw_rd16(st + 114);
 					if (st[27] && A.have_art)
 						A.screen = S_SEARCH;	/* was searching */
 				}
@@ -1582,8 +1868,8 @@ void app_describe(char *out, size_t cap)
 {
 	switch (A.screen) {
 	case S_ARTICLE:
-		snprintf(out, cap, "article \"%s\" page=%u/%u focus=%d links=%u back=%d%s%s",
-			 A.title, A.page + 1, A.a.pages, A.focus, A.pg.nlinks, A.nback,
+		snprintf(out, cap, "article \"%s\" page=%u/%u y=%d focus=%d links=%u back=%d%s%s",
+			 A.title, A.page + 1, A.a.pages, A.yoff, A.focus, A.pg.nlinks, A.nback,
 			 is_fav(A.art) ? " fav" : "", A.finding ? " finding" : "");
 		if (A.finding && A.searched) {
 			size_t n = strlen(out);
@@ -1595,6 +1881,13 @@ void app_describe(char *out, size_t cap)
 			for (i = 0; i < A.pg.npics; ++i)
 				ok += (unsigned)wiki_picture_ok(&A.w, &A.pg.pics[i]);
 			snprintf(out + n, cap - n, " pics=%u shown=%u colour=%d", A.pg.npics, ok, ov_count());
+		} else if (ov_count()) {
+			size_t n = strlen(out);
+			snprintf(out + n, cap - n, " colour=%d", ov_count());	/* from the page below */
+		}
+		if (A.focus >= 0 && A.focus_pg) {
+			size_t n = strlen(out);
+			snprintf(out + n, cap - n, " focusbelow");
 		}
 		break;
 	case S_SEARCH: {

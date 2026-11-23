@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.8.1 (23 Nov 2026): no repeated title on first pages; zimprep --pic-height.
+Version 0.9.1 (23 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.8.1.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.9.1.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -160,7 +160,8 @@ build/pwg-sdl ~/card
 | F3 | Random article |
 | F4 | Calculator |
 | F5 | Help, wiki details; W there chooses another wiki |
-| Up / Down (or Space) | Previous / next page |
+| Up / Down | Scroll a line back / on (tall pictures a third of a screen at a time) |
+| Space / B (or Shift+Space) | A screen on / back |
 | Shift+Up / Shift+Down (Page Up / Page Down on a PC) | Previous / next section |
 | Left / Right | Previous / next link on the page |
 | Enter | Follow the focused link |
@@ -212,7 +213,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=118212`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=92840`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -298,6 +299,19 @@ every title and prefixes of it with several index summary steps.
   name, which pushed the lead picture off the first page). New
   `--pic-height N`. TOP100 in the card zip uses `--pic-height 220`.
   Remake picture wikis to get both.
+* 0.9.0: scrolling. Up/Down move a line (a tall picture a third of a
+  screen at a time), Space a screen on, B or Shift+Space a screen back.
+  The page below is drawn straight under the end of the one above, so
+  the gaps left before pictures and the "picture on the next page"
+  notes are gone while reading. Links (Left/Right go on into the page
+  below), find and sections follow the scroll position; the position is
+  saved as before. No wiki rebuild needed. A second 16 KB page frame
+  for the page below: about 25 KB less free memory.
+* 0.9.1: when the page joined below is short (a gap before a picture that
+  went on to the next page) the pages after it are drawn too, so the
+  picture no longer appears only after another step (The Beatles, Lennon
+  and McCartney). Those pages are decoded into the free end of the
+  picture buffer: no more memory used.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

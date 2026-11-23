@@ -1,0 +1,63 @@
+# scrolling (0.9.0): Up/Down a line (at most a third of a screen), Space
+# a screen, B (or Shift+Space) a screen back; pages joined, so the page
+# below shows under a short one, gaps and "picture on the next page"
+# notes gone; links across both pages; position kept
+key down enter
+type elizabeth ii
+key enter
+expect article "Elizabeth II" page=1/144 y=0
+# page 1 is short: page 2's colour picture shows under it
+expect colour=1
+key down down
+expect page=2/144 y=0 focus=-1 links=0 back=0 pics=1 shown=1 colour=1
+# through the picture a third of a screen at a time, then lines again
+key down
+expect page=2/144 y=100
+key down
+expect page=2/144 y=200
+key down down down
+expect page=2/144 y=265
+expect colour=0
+key b
+expect page=1/144 y=37
+# kept over a power cut (saved when idle)
+key down down down
+expect page=2/144 y=200
+idle
+restart
+expect article "Elizabeth II" page=2/144 y=200
+key tab
+expect page=1/144 y=0
+key del
+expect page=144/144 y=0
+# a short joined page (a gap before a picture that went on): the page
+# after it is drawn too (The Beatles: Lennon on 132, McCartney on 133)
+key f1 f1
+type the beatles
+key enter
+key l down down down down down down down down down down down down down down down down down enter
+expect page=132/224 y=0
+key up up up up up up down down down
+expect page=131/224 y=237
+expect colour=2
+# links: focus goes on into the page below, and is followed from it
+key f5 w up enter
+type climate change
+key enter
+expect article "Climate change" page=1/7 y=0
+key down down down down down down down down
+expect page=1/7 y=180
+key right right right right right right right right right right right right right right right right right right right right
+expect focusbelow
+key enter
+expect article "Carbon dioxide in Earth's"
+key esc
+expect article "Climate change"
+# a screen on and back, line aligned
+key tab
+key space
+expect page=2/7
+key b
+expect page=1/7 y=0
+mem
+expectmem whole

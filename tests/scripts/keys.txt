@@ -3,7 +3,7 @@
 key down enter
 type evolution
 key enter
-key down down
+key space space
 expect page=3/
 key del
 expect page=156/156

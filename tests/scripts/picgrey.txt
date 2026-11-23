@@ -6,10 +6,10 @@ type elvis presley
 key enter
 expect article "Elvis Presley" page=1/
 expect pics=1 shown=1 colour=0
-key down
+key space
 expectnot pics=
 # the same picture again (from the buffer), and after another one
-key up
+key b
 expect pics=1 shown=1 colour=0
 key f1 f1
 type cat

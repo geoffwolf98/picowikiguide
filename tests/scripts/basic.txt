@@ -10,9 +10,14 @@ expect article "Climate change"
 describe
 shot /tmp/s1.pbm
 key down
-expect page=2/
-key up
 expect page=1/
+expectnot y=0 focus
+key up
+expect page=1/7 y=0 focus
+key space
+expect page=2/
+key b
+expect page=1/7 y=0 focus
 key right
 expect focus=
 describe

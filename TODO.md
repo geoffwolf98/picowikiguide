@@ -1,9 +1,7 @@
 # PicoWikiGuide: to do
 
-* Scrolling (agreed in principle): two pages drawn offset, joined by their
-  content height so the gaps before pictures vanish; stepped (line
-  aligned, at most a third of a screen); links, find and sections to
-  follow; hardware smooth scrolling perhaps later.
+* Scrolling (0.9.0 done): hardware smooth scrolling perhaps later; tune
+  the step (a third of a screen) once tried on the device.
 * Battery level in the top bar. The keyboard controller already gives it
   (register 0x0b, `kbd_battery()` in `pico/kbd.c`, shown raw by the
   hardware test); needs the scale checked on the device, then a small

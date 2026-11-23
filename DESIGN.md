@@ -55,7 +55,8 @@ flash and cost no RAM.
 | F3 | Random article |
 | F4 | Calculator |
 | F5 | Help (key list) and options |
-| Up / Down | Previous / next page |
+| Up / Down | Scroll a line (at most a third of a screen) |
+| Space / B, Shift + Space | A screen on / back |
 | Left / Right | Previous / next link on the page |
 | Enter | Follow the focused link |
 | Esc or Backspace | Back |
@@ -181,7 +182,8 @@ draws the same both ways.
 ### 4.4 Memory on the device
 
 The big buffers are fixed in .bss, not taken from the heap: the page
-frame (16 KB), the compressed frame (16.5 KB), the zstd context (96 KB)
+frame (16 KB) and a second one for the page below while scrolling
+(16 KB), the compressed frame (16.5 KB), the zstd context (96 KB)
 and dictionary tables (28 KB). The dictionary itself (112 KB at most)
 is only read once loaded, so the PicoCalc keeps it in flash
 (`pico/dictflash.c`, `src/dictsync.c`): the last 112 KB of the flash
