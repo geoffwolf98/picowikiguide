@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.9.4 (23 Nov 2026): scrolling.
+Version 0.9.9 (23 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.9.4.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.9.9.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -159,10 +159,10 @@ build/pwg-sdl ~/card
 | F2 | History and Favourites (Tab switches, Del removes an entry) |
 | F3 | Random article |
 | F4 | Calculator |
-| F5 | Help, wiki details; W there chooses another wiki; P there switches pictures between "grey if short of room" and "always colour" (16 KB more memory; it restarts) |
+| F5 | Help, wiki details; W there chooses another wiki; C there switches pictures between "always colour" (the default) and "grey if short of room" (16 KB less memory; it restarts) |
 | Up / Down | Scroll a line back / on (tall pictures a third of a screen at a time) |
-| Space / B (or Shift+Space) | A screen on / back |
-| Shift+Up / Shift+Down (Page Up / Page Down on a PC) | Previous / next section |
+| Shift+Down / Shift+Up (Page Down / Page Up on a PC), Space / B (or Shift+Space) | A screen on / back |
+| N / P | Next / previous section |
 | Left / Right | Previous / next link on the page |
 | Enter | Follow the focused link |
 | Esc or Backspace | Back |
@@ -214,7 +214,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=171732`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=171324`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -331,6 +331,22 @@ every title and prefixes of it with several index summary steps.
   only; Enter goes if it is 1 to the article's last page, else shows
   the range; Esc closes). Pictures now stop above the find and page
   bars instead of being drawn over them.
+* 0.9.5: "always colour" is the default (F5, P for "grey if short of
+  room", which saves 16 KB). The F5 help is a table: keys on the left,
+  striped rows; wiki details and memory on two and one lines below.
+* 0.9.6: keys. Shift+Down / Shift+Up (Page Down / Page Up on a PC) go a
+  screen on / back, like Space / B; N / P go to the next / previous
+  section (`[` `]` and, on a PC, Shift+Left / Shift+Right still do). On
+  F5 the pictures switch is now C (was P).
+* 0.9.7: going to a section (N / P, `[` `]`, the L list) scrolls its
+  heading to the top of the screen instead of showing its page from the
+  top; several headings on one page are each a step of N / P, and the
+  L list opens on the heading at the top of the screen.
+* 0.9.8: the F5 table is black on white with thin rules between the
+  rows (the grey stripes were hard to read).
+* 0.9.9: zimprep keeps the captions of {{multiple image}} pictures (the
+  montage at the top of a city's infobox: "London Eye", "Westminster
+  Abbey"...). Remake picture wikis to get them (about 0.1% bigger).
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

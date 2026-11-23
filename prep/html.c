@@ -719,7 +719,11 @@ static int class_is(const attrs_t *a, const char *const *names)
 /* a picture with its caption: <figure>, or these classes */
 static const char *const cap_boxes[] = { "thumbinner", "thumb", "gallerybox", "tsingle",
 					 "infobox-image", NULL };
-static const char *const cap_classes[] = { "thumbcaption", "infobox-caption", "gallerytext", NULL };
+/* (text-align-*: the captions of {{multiple image}}, as in the montage
+ * at the top of a city's infobox; only inside a box with a picture) */
+static const char *const cap_classes[] = { "thumbcaption", "infobox-caption", "gallerytext",
+					   "text-align-center", "text-align-left",
+					   "text-align-right", NULL };
 
 static int skip_by_attrs(const attrs_t *a)
 {

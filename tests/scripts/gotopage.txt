@@ -31,3 +31,35 @@ type 1
 key space
 key enter
 expect page=1/144 y=0
+# N / P: next / previous section, its heading put at the top (0.9.7:
+# several on one page are each a step); Shift+Down / Shift+Up (PgDn /
+# PgUp): a screen on / back (0.9.6)
+key f1 f1
+type the beatles
+key enter
+key n
+expect article "The Beatles" page=10/224 y=113
+key n
+expect page=10/224 y=148
+# the list opens on the heading at the top of the screen
+key l
+expect sections n=38 sel=1
+key esc
+key n
+expect page=10/224 y=178
+key n
+expect page=14/224
+key p
+expect page=10/224 y=178
+key p p p
+expect page=1/224 y=0
+key pgdn
+expect page=2/224 y=0
+key pgup
+expect page=1/224 y=0
+# the section list too
+key l down down down down enter
+expect page=21/224 y=0
+# (the list opens on the section shown)
+key l up up up enter
+expect page=10/224 y=148

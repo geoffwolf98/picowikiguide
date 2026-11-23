@@ -61,7 +61,8 @@ flash and cost no RAM.
 | Left / Right | Previous / next link on the page |
 | Enter | Follow the focused link |
 | Esc or Backspace | Back |
-| Shift + Up / Down (the keyboard sends Page Up / Page Down) | Previous / next section |
+| Shift + Down / Up (the keyboard sends Page Down / Page Up) | A screen on / back |
+| N / P | Next / previous section |
 | L | Section list |
 | / | Find in article |
 | * | Favourite on / off |
@@ -257,9 +258,11 @@ bits a pixel) or colour (a byte a pixel); a view whose pictures are not
 all there refills it from the start: whole pictures if they all fit,
 else only their visible rows, the most showing first, and what still
 does not fit decoded to dithered grey (a quarter of the room). It is
-made from the heap at start, before any wiki: 311 x 255 bytes, or with
-"always colour" (F5, P; kept in PWGSTATE.DAT, applied by restarting)
-320 x 300, a whole screen, so nothing ever needs to go grey.
+made from the heap at start, before any wiki: by default ("always
+colour") 320 x 300, a whole screen, so nothing ever needs to go grey;
+with "grey if short of room" (F5, C; kept in PWGSTATE.DAT, applied by
+restarting) 311 x 255 bytes, 16 KB less. If the big one cannot be made
+the normal one is.
 
 Pagination keeps a picture with its caption; a picture that does not fit
 in what is left of a page goes to the top of the next, and that page

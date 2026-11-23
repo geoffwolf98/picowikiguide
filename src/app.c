@@ -135,7 +135,8 @@ static struct app {
 	char calc_out[64];
 	double calc_ans;
 	int calc_rad;
-	int pic_big;		/* big picture buffer (always colour) */
+	int pic_big;		/* big picture buffer (always colour) made */
+	int pic_grey;		/* chosen: normal buffer, grey if short of room */
 } A;
 
 /* ------------------------------------------------------------------ */
@@ -346,7 +347,8 @@ static int on_article(void)
 /* PWGSTATE.DAT: u32 magic, name[16], u32 article, u16 page, u8 have
  * article, u8 on search (since 0.5.8), double calc ans, u8 radians,
  * query[64] at 48, u16 selected row at 112, u16 scroll offset at 114,
- * u8 big picture buffer at 41 */
+ * u8 pictures grey if short of room (normal picture buffer) at 42 (0.9.3
+ * and 0.9.4 kept "always colour" at 41, now the default) */
 static void write_state(const char *name, int keep_art)
 {
 	uint8_t b[STATE_SIZE];
@@ -362,7 +364,7 @@ static void write_state(const char *name, int keep_art)
 	}
 	memcpy(b + 32, &A.calc_ans, sizeof(double));
 	b[40] = (uint8_t)A.calc_rad;
-	b[41] = (uint8_t)A.pic_big;	/* pictures: always colour (0.9.3) */
+	b[42] = (uint8_t)A.pic_grey;	/* pictures: grey if short (0.9.5) */
 	if (keep_art) {
 		memcpy(b + 48, A.query, QUERY_MAX);
 		zw_wr16(b + 112, (uint16_t)A.sel);
@@ -898,26 +900,6 @@ static void follow(void)
 		open_article(t, 0, 1);
 }
 
-static void section_jump(int dir)
-{
-	int n = wiki_sections(&A.w, &A.a, A.sec, SEC_MAX), i;
-	uint32_t to = A.page;
-	if (dir > 0) {
-		for (i = 0; i < n; ++i)
-			if (A.sec[i].page > A.page) {
-				to = A.sec[i].page;
-				break;
-			}
-	} else {
-		to = 0;
-		for (i = 0; i < n; ++i)
-			if (A.sec[i].page < A.page)
-				to = A.sec[i].page;
-	}
-	A.nsec = n;
-	load_page(to);
-}
-
 /* ------------------------------------------------------------------ */
 /* find in article */
 
@@ -942,10 +924,16 @@ static size_t fold_items(const page_t *pg, unsigned a, unsigned b, char *out, si
 	return n;
 }
 
+/* a line's folded text and where its items start: find in article and
+ * finding section headings (never at the same time) */
+static char s_fline[1200];
+static uint16_t s_fstarts[PAGE_MAX_ITEMS];
+
 static void find_all(void)
 {
-	static char key[QUERY_MAX * 4], line[1200];
-	static uint16_t starts[PAGE_MAX_ITEMS];
+	static char key[QUERY_MAX * 4];
+	char *line = s_fline;
+	uint16_t *starts = s_fstarts;
 	size_t kl = fold_utf8(A.fquery, strlen(A.fquery), key, sizeof(key) - 1);
 	uint32_t p, keep = A.page;
 	int keep_y = A.yoff;
@@ -962,7 +950,7 @@ static void find_all(void)
 		for (l = 0; l < A.pg.nlines; ++l) {
 			const page_line_t *ln = &A.pg.lines[l];
 			size_t n = fold_items(&A.pg, ln->first, ln->first + ln->nitems, line,
-					      sizeof(line), starts), at;
+					      sizeof(s_fline), starts), at;
 			for (at = 0; at + kl <= n && A.nhits < FIND_MAX; ++at) {
 				unsigned k, f = ln->first, e;
 				if (memcmp(line + at, key, kl) != 0)
@@ -1032,6 +1020,91 @@ static void find_step(int dir)
 		A.hit = (A.hit + dir + A.nhits) % A.nhits;
 	}
 	show_hit();
+}
+
+/* ------------------------------------------------------------------ */
+/* sections: put the heading at the top of the screen */
+
+static int heading_font(int f)
+{
+	return f == FONT_HEADING || f == FONT_HEADINGL || f == FONT_BOLD || f == FONT_BOLDL ||
+	       f == FONT_BOLDITALIC || f == FONT_BOLDITALICL;
+}
+
+/* the y of section heading `title` on page pg (its first line: the
+ * folded line text starts the folded title, or the title, cut to fit,
+ * starts the line), heading fonts first, then bold; -1 if not found */
+static int heading_y(const page_t *pg, const char *title)
+{
+	static char t[sizeof(((wiki_section_t *)0)->title) * 4];
+	char *line = s_fline;
+	uint16_t *starts = s_fstarts;
+	size_t tl = fold_utf8(title, strlen(title), t, sizeof(t) - 1), ll, n;
+	int pass;
+	unsigned l;
+	if (!tl)
+		return -1;
+	for (pass = 0; pass < 2; ++pass)
+		for (l = 0; l < pg->nlines; ++l) {
+			const page_line_t *ln = &pg->lines[l];
+			int f;
+			if (!ln->nitems)
+				continue;
+			f = pg->items[ln->first].font;
+			if (pass == 0 ? f != FONT_HEADING && f != FONT_HEADINGL : !heading_font(f))
+				continue;
+			ll = fold_items(pg, ln->first, ln->first + ln->nitems, line, sizeof(s_fline), starts);
+			n = ll < tl ? ll : tl;
+			if (n && n >= (tl < 3 ? tl : 3) && !memcmp(line, t, n))
+				return ln->y;
+		}
+	return -1;
+}
+
+#define HEAD_GAP 4	/* white above a heading put at the top */
+
+/* the scroll offset that shows section i's heading at the top, if it is
+ * on the page loaded (-1 if not found) */
+static int section_yoff(int i)
+{
+	int y = heading_y(&A.pg, A.sec[i].title);
+	if (y < 0)
+		return -1;
+	y -= HEAD_GAP;
+	return y < 0 ? 0 : y;
+}
+
+/* go to section i: its page, scrolled to its heading */
+static void show_section(int i)
+{
+	int y;
+	load_page(A.sec[i].page);
+	y = section_yoff(i);
+	if (y > 0 && y < A.h1)
+		A.yoff = y;
+}
+
+/* the next (dir 1) or previous section from where the screen is now:
+ * a heading further down the page shown counts as next */
+static void section_jump(int dir)
+{
+	int n = wiki_sections(&A.w, &A.a, A.sec, SEC_MAX), i, to = -1;
+	A.nsec = n;
+	for (i = 0; i < n; ++i) {
+		int y = A.sec[i].page == A.page ? section_yoff(i) : -1;
+		if (dir > 0) {
+			if (A.sec[i].page > A.page || (A.sec[i].page == A.page && y > A.yoff)) {
+				to = i;
+				break;
+			}
+		} else if (A.sec[i].page < A.page || (A.sec[i].page == A.page && y >= 0 && y < A.yoff)) {
+			to = i;
+		}
+	}
+	if (to >= 0)
+		show_section(to);
+	else if (dir < 0)
+		load_page(0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1226,49 +1299,67 @@ static void draw_tabs(const char *a, const char *b, int which)
 
 static void draw_help(void)
 {
-	static const char *const lines[] = {
-		"F1 Search   F2 History   F3 Random",
-		"F4 Calculator   F5 This help",
-		"Up/Down scroll   Space / B screen on / back",
-		"Shift+Up/Down  previous / next section",
-		"Left/Right  previous / next link",
-		"Enter  follow link    Esc  back",
-		"L sections   F or / find in page",
-		"* or 8  favourite (on / off)",
-		"Tab first  Del last  G go to page",
-		"W  choose another wiki",
+	/* a table of keys: ruled rows, keys on the left */
+	static const char *const keys[][2] = {
+		{ "F1 / F2", "Search / history, favourites" },
+		{ "F3 / F4", "Random article / calculator" },
+		{ "Up / Down", "Scroll a line" },
+		{ "Shift+Dn / Up", "A screen on / back (Space / B)" },
+		{ "N / P", "Next / previous section" },
+		{ "Left / Right", "Previous / next link" },
+		{ "Enter / Esc", "Follow link / back" },
+		{ "L", "Section list" },
+		{ "F or /", "Find in the article" },
+		{ "G", "Go to a page" },
+		{ "* or 8", "Favourite on / off" },
+		{ "Tab / Del", "First / last page" },
+		{ "W", "Choose another wiki" },
+		{ "C", NULL },
 	};
-	const char *pics = A.pic_big ? "P  pictures: always colour (16 KB more)"
-				     : "P  pictures: grey if short of room";
+	enum { HROW = 16, HKEY = 92 };
 	char s[80];
 	unsigned i;
+	int y;
 	topbar("PicoWikiGuide " PWG_VERSION, NULL);
-	for (i = 0; i < NELEM(lines); ++i)
-		text(6, TOPBAR_H + 20 + i * 17, BAR_FONT, lines[i], BLACK);
-	text(6, TOPBAR_H + 20 + i * 17, BAR_FONT, pics, BLACK);
+	for (i = 0; i < NELEM(keys); ++i) {
+		const char *act = keys[i][1];
+		y = TOPBAR_H + 2 + (int)i * HROW;
+		if (!act)
+			act = A.pic_big ? "Pictures: always colour"
+			      : A.pic_grey ? "Pictures: grey if short"
+			      : "Pictures: grey (no room)";
+		if (i)	/* a rule between rows: black on white reads best */
+			gfx_hline(A.fb, SCREEN_STRIDE, SCREEN_H, 0, y, SCREEN_W, BLACK);
+		text(6, y + 12, BAR_FONT, keys[i][0], BLACK);
+		text_fit(HKEY, y + 12, BAR_FONT, act, SCREEN_W - HKEY - 4, BLACK);
+	}
+	gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, HKEY - 6, TOPBAR_H + 2, 1, (int)NELEM(keys) * HROW, BLACK);
+#define HELP_Y (TOPBAR_H + 2 + (int)NELEM(keys) * HROW)
 	if (A.open) {
-		int y = TOPBAR_H + 26 + ((int)NELEM(lines) + 1) * 17;
-		gfx_hline(A.fb, SCREEN_STRIDE, SCREEN_H, 0, y - 12, SCREEN_W, BLACK);
-		text_fit(6, y + 4, BAR_FONT, A.w.title, SCREEN_W - 12, BLACK);
-		snprintf(s, sizeof(s), "%s, %u articles, %s", A.name, A.w.articles, A.w.date);
-		text_fit(6, y + 22, BAR_FONT, s, SCREEN_W - 12, BLACK);
+		y = HELP_Y;
+		gfx_hline(A.fb, SCREEN_STRIDE, SCREEN_H, 0, y, SCREEN_W, BLACK);
+		snprintf(s, sizeof(s), "%s: %s", A.name, A.w.title);
+		text_fit(6, y + 14, BAR_FONT, s, SCREEN_W - 12, BLACK);
+		snprintf(s, sizeof(s), "%u articles, %s", A.w.articles, A.w.date);
+		text_fit(6, y + 29, BAR_FONT, s, SCREEN_W - 12, BLACK);
 	}
 	{
 		uint32_t fr, big;
 		if (plat_mem(&fr, &big) == 0) {
-			int y = TOPBAR_H + 26 + ((int)NELEM(lines) + 1) * 17 + 40;
 			uint32_t holes, top;
-			snprintf(s, sizeof(s), "Memory free %u KB, largest block %u KB",
-				 (unsigned)(fr / 1024), (unsigned)(big / 1024));
-			text_fit(6, y + 4, BAR_FONT, s, SCREEN_W - 12, BLACK);
-			if (plat_mem_split(&holes, &top) == 0) {
-				snprintf(s, sizeof(s), "(in holes %u KB, at the top %u KB)",
+			y = HELP_Y + 44;
+			if (plat_mem_split(&holes, &top) == 0)
+				snprintf(s, sizeof(s), "Memory %u KB free, largest %u (holes %u, top %u)",
+					 (unsigned)(fr / 1024), (unsigned)(big / 1024),
 					 (unsigned)(holes / 1024), (unsigned)(top / 1024));
-				text_fit(6, y + 22, BAR_FONT, s, SCREEN_W - 12, BLACK);
-			}
+			else
+				snprintf(s, sizeof(s), "Memory %u KB free, largest %u KB",
+					 (unsigned)(fr / 1024), (unsigned)(big / 1024));
+			text_fit(6, y, BAR_FONT, s, SCREEN_W - 12, BLACK);
 		}
 	}
 	hint("Esc: back");
+#undef HELP_Y
 }
 
 static void draw_calc(void)
@@ -1494,10 +1585,18 @@ static void article_keys(int key, int mods)
 		screen_up();
 		drop_hidden_focus();
 		break;
-	case K_PGDN:	/* Shift+Down on the PicoCalc */
+	case K_PGDN:	/* Shift+Down on the PicoCalc: a screen on */
+		screen_down();
+		drop_hidden_focus();
+		break;
+	case K_PGUP:	/* Shift+Up: a screen back */
+		screen_up();
+		drop_hidden_focus();
+		break;
+	case 'n': case 'N':	/* next / previous section */
 		section_jump(1);
 		break;
-	case K_PGUP:	/* Shift+Up */
+	case 'p': case 'P':
 		section_jump(-1);
 		break;
 	case K_HOME: case K_TAB:	/* Shift+Tab sends Home on the PicoCalc */
@@ -1535,8 +1634,11 @@ static void article_keys(int key, int mods)
 		A.sec_sel = A.sec_top = 0;
 		{
 			int i;
+			/* the section shown: the last heading at or above the
+			 * top of the screen */
 			for (i = 0; i < A.nsec; ++i)
-				if (A.sec[i].page <= A.page)
+				if (A.sec[i].page < A.page ||
+				    (A.sec[i].page == A.page && section_yoff(i) <= A.yoff))
 					A.sec_sel = i;
 			if (A.sec_sel >= LIST_ROWS)
 				A.sec_top = A.sec_sel - LIST_ROWS / 2;
@@ -1729,7 +1831,7 @@ void app_key(int key, int mods)
 	case S_SECTIONS:
 		list_keys(key, A.nsec, &A.sec_sel, &A.sec_top);
 		if (key == K_ENTER && A.nsec) {
-			load_page(A.sec[A.sec_sel].page);
+			show_section(A.sec_sel);
 			A.screen = S_ARTICLE;
 		} else if (key == K_ESC || key == 'l' || key == 'L') {
 			A.screen = S_ARTICLE;
@@ -1771,10 +1873,10 @@ void app_key(int key, int mods)
 			A.screen = A.prev_screen;
 		else if ((key == 'w' || key == 'W') && A.nwikis) {
 			A.screen = S_WIKIS;
-		} else if (key == 'p' || key == 'P') {
+		} else if (key == 'c' || key == 'C') {
 			/* the picture buffer is made at start: restart with it */
 			int back = A.prev_screen;
-			A.pic_big = !A.pic_big;
+			A.pic_grey = !A.pic_grey;
 			A.screen = back;	/* the state says where to come back to */
 			save_positions();
 			save_state();
@@ -1832,7 +1934,8 @@ void app_init(void)
 		len = 0;
 	}
 	/* the picture buffer first, before any wiki is opened */
-	A.pic_big = wiki_picbuf(st && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe && st[41]);
+	A.pic_grey = st && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe && st[42];
+	A.pic_big = wiki_picbuf(!A.pic_grey);
 	if (st && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe) {
 		char name[16];
 		memcpy(&A.calc_ans, st + 32, sizeof(double));
