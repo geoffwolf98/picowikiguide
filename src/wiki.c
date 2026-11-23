@@ -37,7 +37,9 @@ static wiki_t *s_open;		/* the wiki using them */
 /* the pictures of the page last drawn, decoded: grey ones 2 bits a pixel
  * (drawn into the frame buffer), colour ones RGB332 (shown over it, see
  * overlay.h).  Kept, so redrawing the page reads nothing. */
+#ifndef PICBUF_SIZE
 #define PICBUF_SIZE (311u * 255u)
+#endif
 static uint8_t s_picbuf[PICBUF_SIZE] __attribute__((aligned(8)));
 typedef struct pcache {
 	uint32_t number, off;
@@ -332,33 +334,46 @@ static const pcache_t *find_pc(const page_pic_t *pp, unsigned r0, unsigned r1)
 }
 
 /* all the view's visible pictures in the buffer: kept if they are there
- * already, else the buffer starts afresh: whole pictures first, then
- * (two big ones meeting in a scrolled view) only their visible rows */
+ * already, else the buffer starts afresh with whole pictures if they all
+ * fit, or else (big ones meeting in a scrolled view) only the visible
+ * rows of the colour ones, the most showing first, so a sliver of one
+ * is what goes without when not all fit */
+#define VIS_MAX 24
 static void load_view_pictures(wiki_t *w, const view_page_t *v, int nv)
 {
-	int i, all = 1, pass;
+	static struct vis { const page_pic_t *pp; unsigned r0, r1; uint32_t area; } vis[VIS_MAX];
+	struct vis t;
+	int i, n = 0, all = 1, crop, j;
 	unsigned k, r0, r1;
-	for (i = 0; i < nv && all; ++i)
-		for (k = 0; k < v[i].npics; ++k)
-			if (vis_rows(&v[i], &v[i].pics[k], &r0, &r1) &&
-			    !find_pc(&v[i].pics[k], r0, r1)) {
+	uint32_t whole = 0;
+	for (i = 0; i < nv; ++i)
+		for (k = 0; k < v[i].npics; ++k) {
+			const page_pic_t *pp = &v[i].pics[k];
+			if (!vis_rows(&v[i], pp, &r0, &r1))
+				continue;
+			whole += (uint32_t)pp->w * pp->h;
+			if (!find_pc(pp, r0, r1))
 				all = 0;
-				break;
+			if (n < VIS_MAX) {
+				vis[n].pp = pp;
+				vis[n].r0 = r0;
+				vis[n].r1 = r1;
+				vis[n].area = (uint32_t)pp->w * (r1 - r0);
+				for (j = n++; j > 0 && vis[j].area > vis[j - 1].area; --j) {
+					t = vis[j];
+					vis[j] = vis[j - 1];
+					vis[j - 1] = t;
+				}
 			}
+		}
 	if (all)
 		return;
 	pc_reset();
-	for (pass = 0; pass < 2; ++pass)
-		for (i = 0; i < nv; ++i)
-			for (k = 0; k < v[i].npics; ++k) {
-				const page_pic_t *pp = &v[i].pics[k];
-				if (!vis_rows(&v[i], pp, &r0, &r1) || find_pc(pp, r0, r1))
-					continue;
-				if (pass == 0)
-					load_picture(w, pp->number, 0, 0);
-				else
-					load_picture(w, pp->number, r0, r1);
-			}
+	crop = whole > PICBUF_SIZE;
+	for (i = 0; i < n; ++i)
+		if (!find_pc(vis[i].pp, vis[i].r0, vis[i].r1) &&
+		    !(crop ? NULL : load_picture(w, vis[i].pp->number, 0, 0)))
+			load_picture(w, vis[i].pp->number, vis[i].r0, vis[i].r1);
 }
 
 void wiki_draw_scratch(uint8_t **frame, page_t **pg)

@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.9.1 (23 Nov 2026): scrolling.
+Version 0.9.2 (23 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.9.1.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.9.2.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -213,7 +213,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=92840`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=92452`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -312,6 +312,12 @@ every title and prefixes of it with several index summary steps.
   picture no longer appears only after another step (The Beatles, Lennon
   and McCartney). Those pages are decoded into the free end of the
   picture buffer: no more memory used.
+* 0.9.2: two big colour pictures meeting while scrolling (ENPEDIA, The
+  Beatles: Lennon and McCartney) when they will not both fit whole in
+  the picture buffer: only their visible rows are loaded, the most
+  showing first, so the big one is drawn and only a sliver of the other
+  can be left as an outline. Before, the lower one went blank for a
+  few steps.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the
