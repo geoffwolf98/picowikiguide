@@ -115,7 +115,11 @@ void wiki_draw_view_pictures(wiki_t *w, const view_page_t *v, int nv, uint8_t *f
  * page in a scrolled view): the free end of the picture buffer, or all
  * of it (the cached pictures dropped) if the end is too small; valid
  * until the next picture is loaded */
-void wiki_draw_scratch(uint8_t **frame, page_t **pg);
+int wiki_draw_scratch(uint8_t **frame, page_t **pg);	/* -1: no room */
+/* the picture buffer, made once at start before anything else big:
+ * normal (311 x 255, a picture that will not fit in colour goes grey)
+ * or big (a screen of colour, 16 KB more); returns big as made */
+int wiki_picbuf(int big);
 /* 1 if the picture can be read and is the size the page says (tests) */
 int wiki_picture_ok(wiki_t *w, const page_pic_t *pp);
 /* called before a wiki_open() that has to write the dictionary to flash

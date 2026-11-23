@@ -1,0 +1,22 @@
+# F5 then P: pictures always colour (a bigger picture buffer, made at
+# start, so it restarts) or grey when short of room (0.9.3)
+key down enter
+type elizabeth ii
+key enter
+expect article "Elizabeth II" page=1/144
+key f5
+expect help pictures=grey
+key p
+expect help pictures=colour
+key esc
+expect article "Elizabeth II" page=1/144
+expect colour=1
+mem
+restart
+key f5
+expect help pictures=colour
+key p
+expect help pictures=grey
+key esc
+expect article "Elizabeth II" page=1/144
+mem

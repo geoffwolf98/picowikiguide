@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.9.2 (23 Nov 2026): scrolling.
+Version 0.9.4 (23 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.9.2.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.9.4.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -159,7 +159,7 @@ build/pwg-sdl ~/card
 | F2 | History and Favourites (Tab switches, Del removes an entry) |
 | F3 | Random article |
 | F4 | Calculator |
-| F5 | Help, wiki details; W there chooses another wiki |
+| F5 | Help, wiki details; W there chooses another wiki; P there switches pictures between "grey if short of room" and "always colour" (16 KB more memory; it restarts) |
 | Up / Down | Scroll a line back / on (tall pictures a third of a screen at a time) |
 | Space / B (or Shift+Space) | A screen on / back |
 | Shift+Up / Shift+Down (Page Up / Page Down on a PC) | Previous / next section |
@@ -170,6 +170,7 @@ build/pwg-sdl ~/card
 | L | Section list |
 | F or / | Find in the article: type, Enter or Down for the next match, Up for the previous, Esc to close |
 | * or 8 | Favourite on or off (a star shows in the top bar) |
+| G | Go to a page: type its number, Enter (out of range shows the range), Esc to close |
 | Tab / Del (or Shift+Tab / Shift+Del, Home / End on a PC) | First / last page |
 
 Search: type a title, Up/Down to choose, Enter to open. Esc clears what
@@ -213,7 +214,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=92452`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=171732`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -318,6 +319,18 @@ every title and prefixes of it with several index summary steps.
   showing first, so the big one is drawn and only a sliver of the other
   can be left as an outline. Before, the lower one went blank for a
   few steps.
+* 0.9.3: a colour picture that still will not fit (two big ones mostly
+  on the screen together) is drawn in dithered grey, a quarter of the
+  room, instead of blank; it turns colour again when there is room. Or
+  F5 then P: "always colour", a picture buffer of a whole screen (16 KB
+  more memory), switched by restarting, kept in PWGSTATE.DAT. The
+  picture buffer is now made from the heap at start (before any wiki,
+  so no holes): free memory reads the same as 0.9.2 in the normal mode,
+  16 KB less in "always colour".
+* 0.9.4: G goes to a page by number (a "Page" bar at the bottom, digits
+  only; Enter goes if it is 1 to the article's last page, else shows
+  the range; Esc closes). Pictures now stop above the find and page
+  bars instead of being drawn over them.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

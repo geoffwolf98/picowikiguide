@@ -56,6 +56,7 @@ flash and cost no RAM.
 | F4 | Calculator |
 | F5 | Help (key list) and options |
 | Up / Down | Scroll a line (at most a third of a screen) |
+| G | Go to page (number bar) |
 | Space / B, Shift + Space | A screen on / back |
 | Left / Right | Previous / next link on the page |
 | Enter | Follow the focused link |
@@ -251,9 +252,14 @@ A row is sent when its frame buffer bytes changed or, when the list of
 pictures changed (position, size, pixels or a generation number bumped
 whenever the buffer is refilled), when a picture covers it now or did
 last time. `tests/ovtest.c` checks this against a simulated panel. The
-picture buffer (311 x 255 bytes, fixed) holds all the pictures of the
-page last drawn, grey (2 bits a pixel) or colour (a byte a pixel); a
-page whose pictures are not all there refills it from the start.
+picture buffer holds all the pictures of the view last drawn, grey (2
+bits a pixel) or colour (a byte a pixel); a view whose pictures are not
+all there refills it from the start: whole pictures if they all fit,
+else only their visible rows, the most showing first, and what still
+does not fit decoded to dithered grey (a quarter of the room). It is
+made from the heap at start, before any wiki: 311 x 255 bytes, or with
+"always colour" (F5, P; kept in PWGSTATE.DAT, applied by restarting)
+320 x 300, a whole screen, so nothing ever needs to go grey.
 
 Pagination keeps a picture with its caption; a picture that does not fit
 in what is left of a page goes to the top of the next, and that page

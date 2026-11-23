@@ -37,10 +37,14 @@ static wiki_t *s_open;		/* the wiki using them */
 /* the pictures of the page last drawn, decoded: grey ones 2 bits a pixel
  * (drawn into the frame buffer), colour ones RGB332 (shown over it, see
  * overlay.h).  Kept, so redrawing the page reads nothing. */
-#ifndef PICBUF_SIZE
-#define PICBUF_SIZE (311u * 255u)
+#ifndef PICBUF_NORMAL
+#define PICBUF_NORMAL (311u * 255u)
 #endif
-static uint8_t s_picbuf[PICBUF_SIZE] __attribute__((aligned(8)));
+/* big: a whole screen of colour, so pictures never need to go grey */
+#define PICBUF_BIG (320u * (uint32_t)PAGE_H)
+static uint8_t *s_picbuf;
+static uint32_t s_picbuf_size;
+#define PICBUF_SIZE s_picbuf_size
 typedef struct pcache {
 	uint32_t number, off;
 	uint16_t w, h;
@@ -189,8 +193,8 @@ static uint8_t s_jdwork[TJPGD_WORKSPACE_SIZE] __attribute__((aligned(8)));
 typedef struct jctx {
 	const uint8_t *data;
 	size_t len, pos;
-	uint8_t *out;		/* w * (row1 - row0) RGB332 */
-	unsigned w, h, row0, row1;
+	uint8_t *out;		/* w * (row1 - row0) RGB332, or 2 bpp rows if grey */
+	unsigned w, h, row0, row1, grey;
 } jctx_t;
 
 static size_t jd_in(JDEC *jd, uint8_t *buf, size_t n)
@@ -213,9 +217,20 @@ static int jd_out(JDEC *jd, void *bitmap, JRECT *r)
 		for (x = r->left; x <= r->right; ++x, p += 3) {
 			/* threshold 0..15 -> a nudge of up to one step of each channel */
 			int t = bayer4[(y & 3) * 4 + (x & 3)];
-			int rr = p[0] + ((t * 2 - 15) * 255) / (7 * 32);
-			int gg = p[1] + ((t * 2 - 15) * 255) / (7 * 32);
-			int bb = p[2] + ((t * 2 - 15) * 255) / (3 * 32);
+			int rr, gg, bb;
+			if (c->grey) {
+				/* luminance, dithered to the 4 greys (ink 0 white .. 3 black) */
+				int v = (p[0] * 77 + p[1] * 150 + p[2] * 29) >> 8;
+				v += ((t * 2 - 15) * 85) / 32;
+				v = v < 0 ? 0 : v > 255 ? 255 : v;
+				if (x < c->w && y >= c->row0 && y < c->row1)
+					c->out[(y - c->row0) * ((c->w * 2 + 7) / 8) + (x >> 2)] |=
+						(uint8_t)((3 - (v + 42) / 85) << (6 - 2 * (x & 3)));
+				continue;
+			}
+			rr = p[0] + ((t * 2 - 15) * 255) / (7 * 32);
+			gg = p[1] + ((t * 2 - 15) * 255) / (7 * 32);
+			bb = p[2] + ((t * 2 - 15) * 255) / (3 * 32);
 			rr = rr < 0 ? 0 : rr > 255 ? 255 : rr;
 			gg = gg < 0 ? 0 : gg > 255 ? 255 : gg;
 			bb = bb < 0 ? 0 : bb > 255 ? 255 : bb;
@@ -228,8 +243,10 @@ static int jd_out(JDEC *jd, void *bitmap, JRECT *r)
 }
 
 /* picture n (rows row0 to row1, or all when row1 is 0; only colour ones
- * can be cut) into the picture buffer after what is there; its entry */
-static pcache_t *load_picture(wiki_t *w, uint32_t n, unsigned row0, unsigned row1)
+ * can be cut) into the picture buffer after what is there; its entry.
+ * grey: a colour one as 2 bpp grey (a quarter of the room), for when it
+ * will not fit in colour */
+static pcache_t *load_picture(wiki_t *w, uint32_t n, unsigned row0, unsigned row1, int grey)
 {
 	uint8_t e[8];
 	uint64_t off;
@@ -260,9 +277,9 @@ static pcache_t *load_picture(wiki_t *w, uint32_t n, unsigned row0, unsigned row
 	pc->number = n;
 	pc->w = (uint16_t)dw;
 	pc->h = (uint16_t)dh;
-	pc->colour = s_cbuf[4] == 2;
+	pc->colour = s_cbuf[4] == 2 && !grey;
 	pc->off = s_pc_used;
-	if (!row1 || !pc->colour) {
+	if (!row1 || s_cbuf[4] != 2) {
 		row0 = 0;
 		row1 = dh;
 	}
@@ -270,7 +287,7 @@ static pcache_t *load_picture(wiki_t *w, uint32_t n, unsigned row0, unsigned row
 		return NULL;
 	pc->row0 = (uint16_t)row0;
 	pc->row1 = (uint16_t)row1;
-	size = pc->colour ? dw * (row1 - row0) : (uint32_t)((dw * 2 + 7) / 8) * dh;
+	size = pc->colour ? dw * (row1 - row0) : (uint32_t)((dw * 2 + 7) / 8) * (row1 - row0);
 	if (size > PICBUF_SIZE - s_pc_used)
 		return NULL;	/* no room left (the next page starts afresh) */
 	if (s_cbuf[4] == 0) {
@@ -297,6 +314,9 @@ static pcache_t *load_picture(wiki_t *w, uint32_t n, unsigned row0, unsigned row
 		c.h = dh;
 		c.row0 = row0;
 		c.row1 = row1;
+		c.grey = !pc->colour;
+		if (c.grey)
+			memset(c.out, 0, size);
 		if (jd_prepare(&jd, jd_in, s_jdwork, sizeof(s_jdwork), &c) != JDR_OK ||
 		    jd.width != dw || jd.height != dh || jd_decomp(&jd, jd_out, 0) != JDR_OK)
 			return NULL;
@@ -372,20 +392,47 @@ static void load_view_pictures(wiki_t *w, const view_page_t *v, int nv)
 	crop = whole > PICBUF_SIZE;
 	for (i = 0; i < n; ++i)
 		if (!find_pc(vis[i].pp, vis[i].r0, vis[i].r1) &&
-		    !(crop ? NULL : load_picture(w, vis[i].pp->number, 0, 0)))
-			load_picture(w, vis[i].pp->number, vis[i].r0, vis[i].r1);
+		    !(crop ? NULL : load_picture(w, vis[i].pp->number, 0, 0, 0)))
+			load_picture(w, vis[i].pp->number, vis[i].r0, vis[i].r1, 0);
+	/* what still does not fit: in grey */
+	for (i = 0; i < n; ++i)
+		if (!find_pc(vis[i].pp, vis[i].r0, vis[i].r1))
+			load_picture(w, vis[i].pp->number, vis[i].r0, vis[i].r1, 1);
 }
 
-void wiki_draw_scratch(uint8_t **frame, page_t **pg)
+int wiki_draw_scratch(uint8_t **frame, page_t **pg)
 {
 	uint32_t at = (s_pc_used + 7u) & ~7u;
 	uint32_t need = FRAME_MAX + ((sizeof(page_t) + 7u) & ~7u);
+	if (need > PICBUF_SIZE)
+		return -1;
 	if (at + need > PICBUF_SIZE) {
 		pc_reset();
 		at = 0;
 	}
 	*pg = (page_t *)(void *)(s_picbuf + at);
 	*frame = s_picbuf + at + ((sizeof(page_t) + 7u) & ~7u);
+	return 0;
+}
+
+int wiki_picbuf(int big)
+{
+	uint32_t want = big ? PICBUF_BIG : PICBUF_NORMAL;
+	if (s_picbuf && s_picbuf_size == want)
+		return big;
+	pc_reset();
+	if (s_picbuf)
+		zw_free(s_picbuf);	/* the PC only: the Pico restarts instead */
+	s_picbuf_size = want;
+	s_picbuf = zw_alloc(want);
+	if (!s_picbuf && big) {
+		big = 0;
+		s_picbuf_size = PICBUF_NORMAL;
+		s_picbuf = zw_alloc(s_picbuf_size);
+	}
+	if (!s_picbuf)
+		s_picbuf_size = 0;	/* no pictures at all */
+	return big;
 }
 
 int wiki_picture_ok(wiki_t *w, const page_pic_t *pp)
@@ -420,7 +467,7 @@ void wiki_draw_view_pictures(wiki_t *w, const view_page_t *v, int nv, uint8_t *f
 			} else {
 				unsigned stride = (unsigned)((pp->w * 2 + 7) / 8);
 				gfx_blit2(fb, SCREEN_STRIDE, SCREEN_H, pp->x, top + (int)r0,
-					  s_picbuf + c->off + r0 * stride, pp->w, (int)(r1 - r0), BLACK);
+					  s_picbuf + c->off + (r0 - c->row0) * stride, pp->w, (int)(r1 - r0), BLACK);
 			}
 		}
 }

@@ -1,0 +1,33 @@
+# G: go to a page by number (0.9.4)
+key down enter
+type elizabeth ii
+key enter
+expect article "Elizabeth II" page=1/144
+key g
+expect going ""
+type 5x0
+expect going "50"
+key enter
+expect article "Elizabeth II" page=50/144 y=0
+expectnot going
+key g
+type 999
+key enter
+expect going "999" bad
+key bs bs
+type 4
+key enter
+expect page=94/144 y=0
+key g
+type 0
+key enter
+expect going "0" bad
+key esc
+expect page=94/144
+expectnot going
+# the number bar takes no other keys: a space is not a screen on
+key g
+type 1
+key space
+key enter
+expect page=1/144 y=0

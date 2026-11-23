@@ -3,6 +3,7 @@
  * find, calculator.  Platform independent (see plat.h).
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include "app.h"
 #include "overlay.h"
 #include "plat.h"
@@ -108,6 +109,12 @@ static struct app {
 	int nhits, hit;		/* hit: current, -1 none */
 	int searched;		/* hits are for fquery */
 
+	/* go to page (G) */
+	int going;		/* the page bar is shown */
+	char gquery[8];
+	size_t gcur;
+	int gbad;		/* the number typed is out of range */
+
 	/* history and favourites */
 	list_ent_t hist[HIST_MAX], fav[FAV_MAX];
 	int nhist, nfav;
@@ -128,6 +135,7 @@ static struct app {
 	char calc_out[64];
 	double calc_ans;
 	int calc_rad;
+	int pic_big;		/* big picture buffer (always colour) */
 } A;
 
 /* ------------------------------------------------------------------ */
@@ -337,7 +345,8 @@ static int on_article(void)
 
 /* PWGSTATE.DAT: u32 magic, name[16], u32 article, u16 page, u8 have
  * article, u8 on search (since 0.5.8), double calc ans, u8 radians,
- * query[64] at 48, u16 selected row at 112, u16 scroll offset at 114 */
+ * query[64] at 48, u16 selected row at 112, u16 scroll offset at 114,
+ * u8 big picture buffer at 41 */
 static void write_state(const char *name, int keep_art)
 {
 	uint8_t b[STATE_SIZE];
@@ -353,6 +362,7 @@ static void write_state(const char *name, int keep_art)
 	}
 	memcpy(b + 32, &A.calc_ans, sizeof(double));
 	b[40] = (uint8_t)A.calc_rad;
+	b[41] = (uint8_t)A.pic_big;	/* pictures: always colour (0.9.3) */
 	if (keep_art) {
 		memcpy(b + 48, A.query, QUERY_MAX);
 		zw_wr16(b + 112, (uint16_t)A.sel);
@@ -799,6 +809,7 @@ static int open_article(uint32_t art, uint32_t page, int push)
 		strcpy(A.title, "(untitled)");
 	load_page(page);
 	A.finding = 0;
+	A.going = 0;
 	A.nhits = 0;
 	A.hit = -1;
 	A.searched = 0;
@@ -1078,8 +1089,8 @@ static void draw_article(void)
 			while (next < SCREEN_H && p < A.a.pages && nv < VIEW_MAX) {
 				uint8_t *fr;
 				page_t *pg;
-				wiki_draw_scratch(&fr, &pg);
-				if (wiki_page_into(&A.w, &A.a, p, pg, fr) < 0)
+				if (wiki_draw_scratch(&fr, &pg) < 0 ||
+				    wiki_page_into(&A.w, &A.a, p, pg, fr) < 0)
 					break;
 				v[nv - 1].clip1 = next;
 				gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, next, SCREEN_W, SCREEN_H - next, WHITE);
@@ -1096,6 +1107,13 @@ static void draw_article(void)
 			}
 		}
 	}
+	if (A.finding || A.going) {
+		/* pictures stop above the find or page bar */
+		int i;
+		for (i = 0; i < nv; ++i)
+			if (v[i].clip1 > SCREEN_H - 30)
+				v[i].clip1 = SCREEN_H - 30;
+	}
 	wiki_draw_view_pictures(&A.w, v, nv, A.fb);
 	if (A.finding && A.hit >= 0) {
 		if (A.hits[A.hit].page == A.page)
@@ -1107,6 +1125,19 @@ static void draw_article(void)
 	gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, 0, SCREEN_W, PAGE_TOP, WHITE);
 	snprintf(r, sizeof(r), "%s%u / %u", is_fav(A.art) ? "* " : "", A.page + 1, A.a.pages);
 	topbar(A.title, r);
+	if (A.going) {
+		char s[32];
+		barh = 30;
+		gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, SCREEN_H - barh, SCREEN_W, barh, WHITE);
+		gfx_hline(A.fb, SCREEN_STRIDE, SCREEN_H, 0, SCREEN_H - barh, SCREEN_W, BLACK);
+		input_box(SCREEN_H - barh + 3, "Page", A.gquery, A.gcur);
+		if (A.gbad)
+			snprintf(s, sizeof(s), "1 to %u", A.a.pages);
+		else
+			snprintf(s, sizeof(s), "of %u", A.a.pages);
+		gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, SCREEN_W - 90, SCREEN_H - barh + 4, 84, 22, WHITE);
+		text(SCREEN_W - 6 - font_width(BAR_FONT, s, strlen(s)), SCREEN_H - 10, BAR_FONT, s, BLACK);
+	}
 	if (A.finding) {
 		char s[48];
 		barh = 30;
@@ -1204,16 +1235,19 @@ static void draw_help(void)
 		"Enter  follow link    Esc  back",
 		"L sections   F or / find in page",
 		"* or 8  favourite (on / off)",
-		"Tab first page   Del last page",
+		"Tab first  Del last  G go to page",
 		"W  choose another wiki",
 	};
+	const char *pics = A.pic_big ? "P  pictures: always colour (16 KB more)"
+				     : "P  pictures: grey if short of room";
 	char s[80];
 	unsigned i;
 	topbar("PicoWikiGuide " PWG_VERSION, NULL);
 	for (i = 0; i < NELEM(lines); ++i)
-		text(6, TOPBAR_H + 20 + i * 19, BAR_FONT, lines[i], BLACK);
+		text(6, TOPBAR_H + 20 + i * 17, BAR_FONT, lines[i], BLACK);
+	text(6, TOPBAR_H + 20 + i * 17, BAR_FONT, pics, BLACK);
 	if (A.open) {
-		int y = TOPBAR_H + 26 + (int)NELEM(lines) * 19;
+		int y = TOPBAR_H + 26 + ((int)NELEM(lines) + 1) * 17;
 		gfx_hline(A.fb, SCREEN_STRIDE, SCREEN_H, 0, y - 12, SCREEN_W, BLACK);
 		text_fit(6, y + 4, BAR_FONT, A.w.title, SCREEN_W - 12, BLACK);
 		snprintf(s, sizeof(s), "%s, %u articles, %s", A.name, A.w.articles, A.w.date);
@@ -1222,7 +1256,7 @@ static void draw_help(void)
 	{
 		uint32_t fr, big;
 		if (plat_mem(&fr, &big) == 0) {
-			int y = TOPBAR_H + 26 + (int)NELEM(lines) * 19 + 40;
+			int y = TOPBAR_H + 26 + ((int)NELEM(lines) + 1) * 17 + 40;
 			uint32_t holes, top;
 			snprintf(s, sizeof(s), "Memory free %u KB, largest block %u KB",
 				 (unsigned)(fr / 1024), (unsigned)(big / 1024));
@@ -1406,6 +1440,26 @@ static void search_keys(int key)
 
 static void article_keys(int key, int mods)
 {
+	if (A.going) {
+		if (key == K_ESC) {
+			A.going = 0;
+		} else if (key == K_ENTER) {
+			unsigned long n = strtoul(A.gquery, NULL, 10);
+			if (n >= 1 && n <= A.a.pages) {
+				A.going = 0;
+				load_page((uint32_t)(n - 1));
+			} else {
+				A.gbad = 1;
+			}
+		} else if (key >= 0x20 && key < 0x7f && (key < '0' || key > '9')) {
+			/* digits only */
+		} else if (key >= '0' && key <= '9' && strlen(A.gquery) >= 5) {
+			/* long enough */
+		} else if (edit_key(A.gquery, sizeof(A.gquery), &A.gcur, key) == 1) {
+			A.gbad = 0;
+		}
+		return;
+	}
 	if (A.finding) {
 		if (key == K_ESC) {
 			A.finding = 0;
@@ -1491,6 +1545,12 @@ static void article_keys(int key, int mods)
 		break;
 	case '/': case 'f': case 'F':
 		A.finding = 1;
+		break;
+	case 'g': case 'G':	/* go to page: type its number */
+		A.going = 1;
+		A.gquery[0] = 0;
+		A.gcur = 0;
+		A.gbad = 0;
 		break;
 	case '*': case '8':	/* 8: * without Shift */
 		{
@@ -1711,6 +1771,20 @@ void app_key(int key, int mods)
 			A.screen = A.prev_screen;
 		else if ((key == 'w' || key == 'W') && A.nwikis) {
 			A.screen = S_WIKIS;
+		} else if (key == 'p' || key == 'P') {
+			/* the picture buffer is made at start: restart with it */
+			int back = A.prev_screen;
+			A.pic_big = !A.pic_big;
+			A.screen = back;	/* the state says where to come back to */
+			save_positions();
+			save_state();
+			snprintf(A.msg, sizeof(A.msg), "Restarting...");
+			A.screen = S_MSG;
+			draw();
+			plat_restart();
+			app_init();	/* the PC: start again here */
+			A.prev_screen = A.screen;
+			A.screen = S_HELP;
 		}
 		break;
 	}
@@ -1757,6 +1831,8 @@ void app_init(void)
 		st = NULL;
 		len = 0;
 	}
+	/* the picture buffer first, before any wiki is opened */
+	A.pic_big = wiki_picbuf(st && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe && st[41]);
 	if (st && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe) {
 		char name[16];
 		memcpy(&A.calc_ans, st + 32, sizeof(double));
@@ -1871,6 +1947,10 @@ void app_describe(char *out, size_t cap)
 		snprintf(out, cap, "article \"%s\" page=%u/%u y=%d focus=%d links=%u back=%d%s%s",
 			 A.title, A.page + 1, A.a.pages, A.yoff, A.focus, A.pg.nlinks, A.nback,
 			 is_fav(A.art) ? " fav" : "", A.finding ? " finding" : "");
+		if (A.going) {
+			size_t n = strlen(out);
+			snprintf(out + n, cap - n, " going \"%s\"%s", A.gquery, A.gbad ? " bad" : "");
+		}
 		if (A.finding && A.searched) {
 			size_t n = strlen(out);
 			snprintf(out + n, cap - n, " hits=%d hit=%d", A.nhits, A.hit + 1);
@@ -1915,7 +1995,7 @@ void app_describe(char *out, size_t cap)
 		snprintf(out, cap, "calc \"%s\" = \"%s\"", A.calc_in, A.calc_out);
 		break;
 	case S_HELP:
-		snprintf(out, cap, "help");
+		snprintf(out, cap, "help pictures=%s", A.pic_big ? "colour" : "grey");
 		break;
 	case S_WIKIS:
 		snprintf(out, cap, "wikis n=%d sel=%d", A.nwikis, A.wiki_sel);
