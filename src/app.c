@@ -122,6 +122,8 @@ static struct app {
 
 	/* "Press F5 for help" in the top bar for the first 10 seconds */
 	int hint_on;
+	int sbar_on;		/* the scroll position bar is shown */
+	uint32_t sbar_t0;	/* when the view last moved */
 	uint32_t hint_t0;
 	/* a note in the top bar for 10 seconds ("Saved position") */
 	char note[40];
@@ -1198,6 +1200,22 @@ static void draw_article(void)
 	gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, 0, SCREEN_W, PAGE_TOP, WHITE);
 	snprintf(r, sizeof(r), "%s%u / %u", is_fav(A.art) ? "* " : "", A.page + 1, A.a.pages);
 	topbar(A.title, r);
+	if (A.sbar_on && A.a.pages && (A.a.pages > 1 || A.h1 > PAGE_H)) {
+		/* where the screen is in the article (the WikiReader's bar):
+		 * pages so far plus the part of this one scrolled, out of all */
+		int top = PAGE_TOP + 2, bot = SCREEN_H - 2 - (A.going || A.finding ? 30 : 0);
+		int area = bot - top, len = area / (int)A.a.pages, y;
+		uint32_t pos = A.page * 1000u + (A.h1 > 0 ? (uint32_t)A.yoff * 1000u / (uint32_t)A.h1 : 0);
+		if (len < 12)
+			len = 12;
+		if (len > area)
+			len = area;
+		y = top + (int)((uint64_t)(area - len) * pos / (A.a.pages > 1 ? (A.a.pages - 1) * 1000u : 1000u));
+		if (y > bot - len)
+			y = bot - len;
+		gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, SCREEN_W - 5, y - 1, 5, len + 2, WHITE);
+		gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, SCREEN_W - 4, y, 3, len, BLACK);
+	}
 	if (A.going) {
 		char s[32];
 		barh = 30;
@@ -1873,16 +1891,24 @@ void app_key(int key, int mods)
 			A.screen = A.prev_screen;
 		else if ((key == 'w' || key == 'W') && A.nwikis) {
 			A.screen = S_WIKIS;
-		} else if (key == 'c' || key == 'C') {
-			/* the picture buffer is made at start: restart with it */
+		} else if (key == 'c' || key == 'C' || key == 'R') {
+			/* C: pictures (the picture buffer is made at start:
+			 * restart with it); Shift+R (not listed): just restart */
 			int back = A.prev_screen;
-			A.pic_grey = !A.pic_grey;
+			if (key != 'R')
+				A.pic_grey = !A.pic_grey;
 			A.screen = back;	/* the state says where to come back to */
 			save_positions();
 			save_state();
 			snprintf(A.msg, sizeof(A.msg), "Restarting...");
 			A.screen = S_MSG;
 			draw();
+			if (key == 'R') {
+				/* time to hold a key for a boot loader's menu */
+				uint32_t t0 = plat_ms();
+				while (plat_ms() - t0 < 1500)
+					;
+			}
 			plat_restart();
 			app_init();	/* the PC: start again here */
 			A.prev_screen = A.screen;
@@ -1993,7 +2019,19 @@ void app_event(const plat_event_t *e)
 			/* the key that stops the switch-off does nothing else */
 			A.off_secs = 0;
 		} else {
+			uint32_t page = A.page;
+			int yoff = A.yoff, scr = A.screen;
+			uint32_t art = A.art;
 			app_key(e->key, e->mods);
+			/* the scroll bar shows while the view moves */
+			if (A.screen == S_ARTICLE && scr == S_ARTICLE &&
+			    A.art == art &&
+			    (A.page != page || A.yoff != yoff)) {
+				A.sbar_on = 1;
+				A.sbar_t0 = plat_ms();
+			} else if (A.screen != S_ARTICLE) {
+				A.sbar_on = 0;
+			}
 		}
 		draw();
 	} else if (e->type == PE_TICK) {
@@ -2007,6 +2045,10 @@ void app_event(const plat_event_t *e)
 		}
 		if (A.note[0] && plat_ms() - A.note_t0 >= 10000) {
 			A.note[0] = 0;
+			changed = 1;
+		}
+		if (A.sbar_on && plat_ms() - A.sbar_t0 >= 1000) {
+			A.sbar_on = 0;
 			changed = 1;
 		}
 		if (changed)
@@ -2050,6 +2092,10 @@ void app_describe(char *out, size_t cap)
 		snprintf(out, cap, "article \"%s\" page=%u/%u y=%d focus=%d links=%u back=%d%s%s",
 			 A.title, A.page + 1, A.a.pages, A.yoff, A.focus, A.pg.nlinks, A.nback,
 			 is_fav(A.art) ? " fav" : "", A.finding ? " finding" : "");
+		if (A.sbar_on) {
+			size_t n = strlen(out);
+			snprintf(out + n, cap - n, " sbar");
+		}
 		if (A.going) {
 			size_t n = strlen(out);
 			snprintf(out + n, cap - n, " going \"%s\"%s", A.gquery, A.gbad ? " bad" : "");

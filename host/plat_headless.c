@@ -158,6 +158,11 @@ int main(int argc, char **argv)
 			}
 		} else if (strcmp(p, "idle") == 0) {
 			event(PE_IDLE);
+		} else if (strcmp(p, "wait") == 0) {
+			/* let N ms pass, then the 1 s tick */
+			extern uint32_t host_ms_skew;
+			host_ms_skew += (uint32_t)atoi(arg);
+			event(PE_TICK);
 		} else if (strcmp(p, "offin") == 0) {
 			off_in = atoi(arg);
 			event(PE_TICK);

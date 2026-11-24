@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.9.9 (23 Nov 2026): scrolling.
+Version 0.9.11 (24 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.9.9.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.9.11.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -128,7 +128,30 @@ build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
   to 255 pixels (default 255). 220 lets most portrait lead pictures share
   the first page with the title and caption (TOP100: half-empty first
   pages 46 at 255, 24 at 220, 7 at 200), and makes pictures a little
-  smaller on the card.
+  smaller on the card. With scrolling (0.9.0) the half-empty pages no
+  longer show while reading, so 255 is the better default.
+
+### Recommended settings
+
+Use a Wikipedia `maxi` ZIM (it has the pictures) and:
+
+| For | zimprep options | English Wikipedia (maxi, 2026-08) |
+|---|---|---|
+| The best look: colour pictures | `--pictures all --colour` | about 87 GiB (128 GB card), about 50 minutes on a 32-thread PC |
+| Colour, a little smaller | `--pictures all --colour --pic-height 220` | an estimated 6 to 13 GB less |
+| Grey pictures (the WikiReader look) | `--pictures all` | smaller again (grey pictures are about 0.6 of colour) |
+| Text only, smallest | (no picture options) | much the smallest; any ZIM, `nopic` and `mini` too |
+
+```
+build/zimprep -n ENPEDIA --pictures all --colour wikipedia_en_all_maxi_2026-08.zim ~/card
+```
+
+With firmware 0.9.0 or later the default picture height (255) is best:
+scrolling joins pages, so the gap left when a picture moves to the next
+page goes as you read, and "always colour" (the default from 0.9.5)
+always has room for two big pictures on the screen. `--pic-height 220`
+only saves card space. Make wikis with the zimprep of the same release
+as the firmware or newer (0.9.9 adds the captions of picture montages).
 
 Each run writes `~/card/NAME/` (`NAME.TOC`, `NAME.P00`..., `NAME.IDX`,
 `NAME.HIS`, `NAME.FAV`, and with pictures `NAME.I00`...) and, if it is not there yet, `~/card/PWGSTATE.DAT`.
@@ -214,7 +237,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=171324`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=171316`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -347,6 +370,13 @@ every title and prefixes of it with several index summary steps.
 * 0.9.9: zimprep keeps the captions of {{multiple image}} pictures (the
   montage at the top of a city's infobox: "London Eye", "Westminster
   Abbey"...). Remake picture wikis to get them (about 0.1% bigger).
+* 0.9.10: a scroll position bar, as on the WikiReader: a thin bar at the
+  right edge while the view moves, its place showing how far through
+  the article the screen is; it goes a second after. Shift+R on F5
+  restarts (saving the place first). The PC tests can let time pass
+  (`wait N`).
+* 0.9.11: Shift+R on F5 shows "Restarting..." for 1.5 s first, time to
+  hold Up for the boot loader's menu.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

@@ -148,11 +148,13 @@ int host_save_pbm(const char *path, const uint8_t *fb)
 	}
 }
 
+uint32_t host_ms_skew;	/* tests: time moved on by "wait" */
+
 uint32_t plat_ms(void)
 {
 	struct timespec t;
 	clock_gettime(CLOCK_MONOTONIC, &t);
-	return (uint32_t)(t.tv_sec * 1000u + t.tv_nsec / 1000000u);
+	return (uint32_t)(t.tv_sec * 1000u + t.tv_nsec / 1000000u) + host_ms_skew;
 }
 
 void plat_keepalive(void) {}

@@ -1,0 +1,30 @@
+# the scroll position bar (as on the WikiReader): shown while the view
+# moves, gone a second after; Shift+R on F5 restarts (0.9.10)
+key down enter
+type the beatles
+key enter
+expectnot sbar
+key down
+expect sbar
+shot /tmp/sb1.png
+wait 1200
+expectnot sbar
+key g
+type 112
+key enter
+expect page=112/224
+expect sbar
+shot /tmp/sb2.png
+wait 1200
+key del
+expect page=224/224
+expect sbar
+shot /tmp/sb3.png
+wait 1200
+expectnot sbar
+key f5
+type R
+# (the PC starts again on F5; the PicoCalc on the article)
+expect help
+key esc
+expect article "The Beatles" page=224/224

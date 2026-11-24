@@ -9,7 +9,8 @@ expect article "Elizabeth II" page=1/144 y=0
 # page 1 is short: page 2's colour picture shows under it
 expect colour=1
 key down down
-expect page=2/144 y=0 focus=-1 links=0 back=0 pics=1 shown=1 colour=1
+expect page=2/144 y=0 focus=-1 links=0 back=0
+expect pics=1 shown=1 colour=1
 # through the picture a third of a screen at a time, then lines again
 key down
 expect page=2/144 y=100
