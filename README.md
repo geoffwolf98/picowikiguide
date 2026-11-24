@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.9.11 (24 Nov 2026): scrolling.
+Version 0.9.12 (24 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.9.11.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-0.9.12.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -140,7 +140,7 @@ Use a Wikipedia `maxi` ZIM (it has the pictures) and:
 | The best look: colour pictures | `--pictures all --colour` | about 87 GiB (128 GB card), about 50 minutes on a 32-thread PC |
 | Colour, a little smaller | `--pictures all --colour --pic-height 220` | an estimated 6 to 13 GB less |
 | Grey pictures (the WikiReader look) | `--pictures all` | smaller again (grey pictures are about 0.6 of colour) |
-| Text only, smallest | (no picture options) | much the smallest; any ZIM, `nopic` and `mini` too |
+| Text only, smallest | `--pictures none` | 26 GB (32 GB card), about 23 minutes on a 32-thread PC; any ZIM, `nopic` and `mini` too |
 
 ```
 build/zimprep -n ENPEDIA --pictures all --colour wikipedia_en_all_maxi_2026-08.zim ~/card
@@ -377,6 +377,8 @@ every title and prefixes of it with several index summary steps.
   (`wait N`).
 * 0.9.11: Shift+R on F5 shows "Restarting..." for 1.5 s first, time to
   hold Up for the boot loader's menu.
+* 0.9.12: Shift+O on F5 switches off (the place saved first; the power
+  goes in about 6 s, as with the idle switch-off).
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

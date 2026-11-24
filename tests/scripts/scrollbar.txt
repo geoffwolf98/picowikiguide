@@ -28,3 +28,7 @@ type R
 expect help
 key esc
 expect article "The Beatles" page=224/224
+# Shift+O on F5 (not listed): the place saved, then off (the PC carries on)
+key f5
+type O
+expect help

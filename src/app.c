@@ -1891,6 +1891,18 @@ void app_key(int key, int mods)
 			A.screen = A.prev_screen;
 		else if ((key == 'w' || key == 'W') && A.nwikis) {
 			A.screen = S_WIKIS;
+		} else if (key == 'O') {
+			/* Shift+O (not listed): switch off, the place saved */
+			A.screen = A.prev_screen;
+			save_positions();
+			save_state();
+			snprintf(A.msg, sizeof(A.msg), "Switching off...");
+			A.screen = S_MSG;
+			draw();
+			plat_power_off();
+			/* the PicoCalc goes off in a few seconds; on the PC (or a
+			 * keyboard that cannot switch off) carry on */
+			A.screen = S_HELP;
 		} else if (key == 'c' || key == 'C' || key == 'R') {
 			/* C: pictures (the picture buffer is made at start:
 			 * restart with it); Shift+R (not listed): just restart */

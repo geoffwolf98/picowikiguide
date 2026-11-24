@@ -47,7 +47,16 @@ int plat_sector_read(uint32_t lba, void *buf, uint32_t count) { return sd_read(l
 void plat_present(const uint8_t *fb) { lcd_present(fb); }
 uint32_t plat_ms(void) { return to_ms_since_boot(get_absolute_time()); }
 void plat_keepalive(void) {}
-void plat_power_off(void) { kbd_power_off(6); }
+void plat_power_off(void)
+{
+	/* the keyboard's power chip cuts the power after 6 s; wait for it
+	 * (an older keyboard firmware cannot: then go on after 12 s) */
+	uint32_t t0;
+	kbd_power_off(6);
+	t0 = plat_ms();
+	while (plat_ms() - t0 < 12000)
+		sleep_ms(100);
+}
 
 static uint32_t last_key;
 
