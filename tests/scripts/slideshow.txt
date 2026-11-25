@@ -1,12 +1,12 @@
-# picture slideshow (1.1.0): F5 then S, the search filled with the
-# article being read; an article shows its own pictures, a list the
-# lead pictures of what it links to
+# picture slideshow (1.1.0): F5 then S, one screen: where to start (the
+# article being read), the options, Start; an article shows its own
+# pictures, a list the lead pictures of what it links to
 key down enter
 type london
 key enter
 key f5
 type s
-expect search "London" sel=0 "London" picking
+expect slideopts "London" sel=6 all=0 levels=2 per=20 random=1 secs=5
 key enter
 expect slide "London" art=58 page=0 pic=0 shown=1
 key right
@@ -23,29 +23,43 @@ expect paused
 wait 6000
 expect shown=3
 key space
+# O: the options from the show, Esc back to it as it was
+type o
+expect slideopts "London" sel=1
+key esc
+expect slide "London"
+expect shown=3
 key esc
 expect article "London" page=1/156
-# options: Tab while choosing
+# options on the screen (rows: Start from, Pictures, Lists, Links per
+# list, Order, Each picture, Start): from Start, up to Each picture
 key f5
 type s
-key tab
-expect slideopts sel=0 all=0 levels=2 per=20 random=1 secs=5
-key down down down
+key up
+expect sel=5
+key left
+expect secs=3
+key right right right right
+expect secs=0
+key up
 key left
 expect random=0
-key down
-key right right right
-expect secs=0
-key esc
-expect picking
-# a list: the lead pictures of its links (TOP100 has one of the states)
+key right
+expect random=1
+# another start: Enter on "Start from" picks with the search
+key up up up up
+expect sel=0
+key enter
+expect search "London" sel=0 "London" picking
 key bs bs bs bs bs bs
 type list of states
+key enter
+expect slideopts "List of states and territories of the United States" sel=6
 key enter
 expect slide "Washington, D.C."
 key right
 expect end
-# manual: no timer
+# by hand: no timer
 wait 6000
 expect end
 key enter

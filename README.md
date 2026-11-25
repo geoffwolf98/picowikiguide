@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 1.1.0 (25 Nov 2026): scrolling.
+Version 1.1.1 (25 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-1.1.0.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-1.1.1.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -244,7 +244,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=168212`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=168108`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -413,6 +413,11 @@ every title and prefixes of it with several index summary steps.
   back), Space pause, Enter opens the article there, Esc stops. Every
   3, 5, 10 or 20 seconds or by hand; no idle switch-off while it runs.
   Options kept in PWGSTATE.DAT.
+* 1.1.1: the slideshow has its own screen (F5 then S): "Start from"
+  (the article being read; Enter on it picks another with the search),
+  the options, and Start, with what the keys do on the bottom line. In a
+  show the keys line shows for 4 s after each key; O opens the options
+  and Esc there goes back to the show.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

@@ -148,6 +148,9 @@ static struct app {
 	uint8_t ss_opt[5];
 	int ss_osel;
 	int ss_ret;		/* the screen the slideshow was started from */
+	uint32_t ss_art;	/* where it starts, TOC_NONE: not chosen */
+	char ss_title[100];
+	int ss_from_show;	/* the setup screen was opened from a show */
 } A;
 
 /* ------------------------------------------------------------------ */
@@ -1236,7 +1239,7 @@ typedef struct ss_level {
 static struct {
 	int picking, paused, end, root_list, in_art, nlv, nhist, back, nseen;
 	unsigned shown;
-	uint32_t t0, rnd, root;
+	uint32_t t0, rnd, root, hint_t0;
 	ss_level_t lv[SS_LV];
 	ss_item_t cur, hist[SS_HIST];
 	uint32_t seen[SS_SEEN];
@@ -1523,20 +1526,35 @@ static void ss_start(uint32_t root)
 	}
 	A.prev_screen = A.ss_ret;
 	A.screen = S_SLIDE;
+	A.ss_from_show = 0;
+	SS.hint_t0 = plat_ms();
 	ss_advance();
 }
 
-/* F5 then S: the search screen picks where to start, filled with the
- * article being read */
-static void ss_pick(void)
+/* F5 then S: the slideshow screen, starting from the article being
+ * read (Enter on "Start from" picks another with the search) */
+static void ss_setup(void)
 {
 	if (!A.open)
 		return;
 	A.ss_ret = A.prev_screen;
+	A.ss_from_show = 0;
+	if (A.have_art && A.ss_ret == S_ARTICLE) {
+		A.ss_art = A.art;
+		snprintf(A.ss_title, sizeof(A.ss_title), "%s", A.title);
+	} else if (A.ss_art == 0 && !A.ss_title[0]) {
+		A.ss_art = TOC_NONE;
+	}
+	A.ss_osel = A.ss_art == TOC_NONE ? 0 : 6;	/* on Start, or on choosing */
+	A.screen = S_SLIDEOPT;
+}
+
+/* Enter on "Start from": the search, to choose (Enter) or not (Esc) */
+static void ss_pick(void)
+{
 	memcpy(SS.saved_query, A.query, sizeof(SS.saved_query));
 	SS.saved_qcur = A.qcur;
-	if (A.have_art && A.ss_ret == S_ARTICLE)
-		snprintf(A.query, sizeof(A.query), "%s", A.title);
+	snprintf(A.query, sizeof(A.query), "%s", A.ss_art != TOC_NONE ? A.ss_title : "");
 	A.qcur = strlen(A.query);
 	A.top_ok = 0;
 	A.sel = 0;
@@ -1601,7 +1619,9 @@ static void draw_slide(void)
 		v.clip1 = top + avail;
 		wiki_draw_view_pictures(&A.w, &v, 1, A.fb);
 	}
-	if (SS.cap[0]) {
+	if (plat_ms() - SS.hint_t0 < 4000) {
+		hint("Left/Right  Space pause  Enter open  O options");
+	} else if (SS.cap[0]) {
 		const char *c = SS.cap;
 		size_t n = ss_fit(c, SCREEN_W - 12);
 		char line[200];
@@ -1627,48 +1647,84 @@ static const char *ss_opt_val(int i, char *buf, size_t cap)
 	case 3: return A.ss_opt[3] ? "random" : "in order";
 	default:
 		if (!ss_secs_v[A.ss_opt[4] % 5])
-			return "manual (Right)";
+			return "by hand (Right)";
 		snprintf(buf, cap, "%u seconds", ss_secs_v[A.ss_opt[4] % 5]);
 		return buf;
 	}
 }
 
+/* the slideshow screen: row 0 where to start, 1-5 the options, 6 Start */
 static void draw_slideopt(void)
 {
 	int i;
 	char b[24];
+	const char *h;
 	gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, 0, SCREEN_W, SCREEN_H, WHITE);
-	topbar("Slideshow options", NULL);
-	for (i = 0; i < 5; ++i) {
-		int y = TOPBAR_H + 10 + i * 34;
-		text(10, y + 14, BAR_FONT, ss_opt_name[i], BLACK);
-		text(130, y + 14, BAR_FONT, ss_opt_val(i, b, sizeof(b)), BLACK);
+	topbar("Picture slideshow", NULL);
+	for (i = 0; i < 7; ++i) {
+		int y = TOPBAR_H + 8 + i * 30 + (i == 6 ? 8 : 0);
+		if (i == 0) {
+			text(10, y + 14, BAR_FONT, "Start from", BLACK);
+			text_fit(118, y + 14, BAR_FONT, A.ss_art != TOC_NONE ? A.ss_title : "(choose an article)",
+				 SCREEN_W - 126, BLACK);
+		} else if (i < 6) {
+			text(10, y + 14, BAR_FONT, ss_opt_name[i - 1], BLACK);
+			text(118, y + 14, BAR_FONT, ss_opt_val(i - 1, b, sizeof(b)), BLACK);
+		} else {
+			const char *st = A.ss_from_show ? "Start again" : "Start";
+			int w = font_width(BAR_FONT, st, strlen(st));
+			text((SCREEN_W - w) / 2, y + 14, BAR_FONT, st, BLACK);
+		}
 		if (i == A.ss_osel)
 			sel_box(4, y, SCREEN_W - 8, 22, y + 14, 0);
 	}
-	hint("Up/Down: choose  Left/Right: change  Esc: back");
+	h = A.ss_osel == 0 ? "Enter: choose the article  Esc: back"
+	    : A.ss_osel == 6 ? "Enter: start  Up: options  Esc: back"
+	    : "Left/Right: change  Up/Down: move  Esc: back";
+	hint(h);
 }
 
 static void slideopt_keys(int key)
 {
 	static const uint8_t n[5] = { 2, 2, 3, 2, 5 };
+	int o = A.ss_osel - 1;
 	if (key == K_UP && A.ss_osel > 0)
 		A.ss_osel--;
-	else if (key == K_DOWN && A.ss_osel < 4)
+	else if ((key == K_DOWN || key == K_TAB) && A.ss_osel < 6)
 		A.ss_osel++;
-	else if (key == K_RIGHT || key == K_ENTER || key == ' ')
-		A.ss_opt[A.ss_osel] = (uint8_t)((A.ss_opt[A.ss_osel] + 1) % n[A.ss_osel]);
-	else if (key == K_LEFT)
-		A.ss_opt[A.ss_osel] = (uint8_t)((A.ss_opt[A.ss_osel] + n[A.ss_osel] - 1) % n[A.ss_osel]);
-	else if (key == K_ESC || key == K_TAB) {
+	else if (A.ss_osel == 0 && key == K_ENTER)
+		ss_pick();
+	else if (o >= 0 && o < 5 && (key == K_RIGHT || key == K_ENTER || key == ' '))
+		A.ss_opt[o] = (uint8_t)((A.ss_opt[o] + 1) % n[o]);
+	else if (o >= 0 && o < 5 && key == K_LEFT)
+		A.ss_opt[o] = (uint8_t)((A.ss_opt[o] + n[o] - 1) % n[o]);
+	else if (A.ss_osel == 6 && key == K_ENTER) {
+		if (A.ss_art == TOC_NONE) {
+			A.ss_osel = 0;
+			return;
+		}
 		save_state();
-		A.screen = S_SEARCH;	/* back to choosing */
+		ss_start(A.ss_art);
+	} else if (key == K_ESC) {
+		save_state();
+		if (A.ss_from_show) {
+			A.ss_from_show = 0;
+			A.screen = S_SLIDE;	/* back to the show, as it was */
+			SS.t0 = plat_ms();
+		} else {
+			A.screen = A.ss_ret == S_ARTICLE && A.have_art ? S_ARTICLE : S_SEARCH;
+		}
 	}
 }
 
 static void slide_keys(int key)
 {
-	if (key == K_ESC) {
+	SS.hint_t0 = plat_ms();	/* the keys line shows again for a while */
+	if (key == 'o' || key == 'O') {
+		A.ss_from_show = 1;
+		A.ss_osel = 1;
+		A.screen = S_SLIDEOPT;
+	} else if (key == K_ESC) {
 		A.screen = A.ss_ret == S_ARTICLE && A.have_art ? S_ARTICLE : S_SEARCH;
 	} else if (key == K_ENTER) {
 		if (SS.shown && open_article(SS.cur.art, SS.cur.page, 1) == 0)
@@ -1695,11 +1751,14 @@ static void slide_keys(int key)
 static int ss_tick(void)
 {
 	unsigned secs = ss_secs_v[A.ss_opt[4] % 5];
+	int hint_gone = A.screen == S_SLIDE && SS.hint_t0 && plat_ms() - SS.hint_t0 >= 4000;
+	if (hint_gone)
+		SS.hint_t0 = 0;
 	if (A.screen != S_SLIDE || SS.paused || !secs || (SS.end && !SS.back))
-		return 0;
+		return hint_gone;
 	plat_stay_awake();	/* no idle switch-off while it runs */
 	if (plat_ms() - SS.t0 < secs * 1000u)
-		return 0;
+		return hint_gone;
 	if (SS.back) {
 		SS.back--;
 		ss_load(&SS.hist[SS.nhist - 1 - SS.back]);
@@ -1853,7 +1912,7 @@ static void draw_search(void)
 	idx_record_t r;
 	int i;
 	if (SS.picking)
-		snprintf(t, sizeof(t), "Slideshow: where to start");
+		snprintf(t, sizeof(t), "Slideshow: start from");
 	else
 		snprintf(t, sizeof(t), "Search  %s", A.open ? A.w.title : "");
 	topbar(t, A.open && !SS.picking ? A.name : NULL);
@@ -2102,12 +2161,8 @@ static void search_keys(int key)
 			A.screen = S_WIKIS;
 		return;
 	}
-	if (SS.picking && key == K_ESC) {	/* no slideshow after all */
+	if (SS.picking && key == K_ESC) {	/* keep the one chosen before */
 		ss_unpick();
-		A.screen = A.ss_ret == S_ARTICLE && A.have_art ? S_ARTICLE : S_SEARCH;
-		return;
-	}
-	if (SS.picking && key == K_TAB) {
 		A.screen = S_SLIDEOPT;
 		return;
 	}
@@ -2149,7 +2204,10 @@ static void search_keys(int key)
 				return;
 		if (SS.picking) {
 			ss_unpick();
-			ss_start(r.target);
+			A.ss_art = r.target;
+			snprintf(A.ss_title, sizeof(A.ss_title), "%s", r.title);
+			A.ss_osel = 6;	/* on Start */
+			A.screen = S_SLIDEOPT;
 			return;
 		}
 		if (open_article(r.target, 0, 1) == 0 && (r.flags & IDX_FLAG_SECTION))
@@ -2524,7 +2582,7 @@ void app_key(int key, int mods)
 		if (key == K_ESC || key == K_F5 || key == K_ENTER)
 			A.screen = A.prev_screen;
 		else if (key == 's' || key == 'S')
-			ss_pick();
+			ss_setup();
 		else if ((key == 'w' || key == 'W') && A.nwikis) {
 			A.screen = S_WIKIS;
 		} else if (key == 'O') {
@@ -2821,7 +2879,8 @@ void app_describe(char *out, size_t cap)
 			 SS.paused ? " paused" : "", SS.end ? " end" : "");
 		break;
 	case S_SLIDEOPT:
-		snprintf(out, cap, "slideopts sel=%d all=%d levels=%d per=%u random=%d secs=%u", A.ss_osel,
+		snprintf(out, cap, "slideopts \"%s\" sel=%d all=%d levels=%d per=%u random=%d secs=%u",
+			 A.ss_art != TOC_NONE ? A.ss_title : "", A.ss_osel,
 			 A.ss_opt[0], A.ss_opt[1] + 1, ss_per_v[A.ss_opt[2] % 3], A.ss_opt[3],
 			 ss_secs_v[A.ss_opt[4] % 5]);
 		break;
