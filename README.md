@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 1.0.0 (25 Nov 2026): scrolling.
+Version 1.1.0 (25 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-1.0.0.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-1.1.0.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -188,6 +188,7 @@ build/pwg-sdl ~/card
 | F2 | History and Favourites (Tab switches, Del removes an entry) |
 | F3 | Random article |
 | F4 | Calculator |
+| F5 then S | Picture slideshow (below) |
 | F5 | Help, wiki details; W there chooses another wiki; C there switches pictures between "always colour" (the default) and "grey if short of room" (16 KB less memory; it restarts) |
 | Up / Down | Scroll a line back / on (tall pictures a third of a screen at a time) |
 | Shift+Down / Shift+Up (Page Down / Page Up on a PC), Space / B (or Shift+Space) | A screen on / back |
@@ -243,7 +244,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=169916`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=168212`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -397,6 +398,21 @@ every title and prefixes of it with several index summary steps.
   everything when the version changes (unpacking a release keeps old
   file times). A wiki without pictures no longer gets the picture
   buffer: about 70 KB more free. Remake wikis to get the redirects.
+* 1.0.1: the battery in the top bar, as the UF2 loader shows it: the
+  percent and an icon filled to match, a + in it while charging (the
+  keyboard controller's register: low 7 bits the percent, bit 7
+  charging), read every 30 s; nothing shown if it cannot be read.
+* 1.1.0: picture slideshow. F5 then S opens the search, filled with the
+  article being read; Enter starts there, Tab sets the options. An
+  article shows all its own pictures. A list ("List of ...", "Lists
+  of ...") shows the lead picture (or all pictures) of the articles it
+  links to (only links that start a line: the list's items), going into
+  a linked list when two levels are set; at most 10, 20 or 50 links of
+  each list, in order or picked at random. Each picture full screen with
+  its caption and its article's title; Right / Left next and back (20
+  back), Space pause, Enter opens the article there, Esc stops. Every
+  3, 5, 10 or 20 seconds or by hand; no idle switch-off while it runs.
+  Options kept in PWGSTATE.DAT.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

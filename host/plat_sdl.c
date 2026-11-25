@@ -41,6 +41,14 @@ void plat_present(const uint8_t *fb)
 	SDL_RenderPresent(ren);
 }
 
+void plat_stay_awake(void) {}
+
+int plat_battery(void)
+{
+	const char *s = getenv("PWG_BATTERY");	/* tests: e.g. 71, or 199 charging */
+	return s ? atoi(s) : -1;
+}
+
 int plat_keys_held(void) { return safe; }
 int32_t plat_off_in(void) { return -1; }
 void plat_power_off(void) {}

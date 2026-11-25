@@ -41,6 +41,14 @@ static uint8_t screen[SCREEN_STRIDE * SCREEN_H];
 void plat_present(const uint8_t *fb) { memcpy(screen, fb, sizeof(screen)); }
 int plat_poll(plat_event_t *e) { e->type = PE_NONE; return 0; }
 int plat_wait(plat_event_t *e) { e->type = PE_QUIT; return 1; }
+void plat_stay_awake(void) {}
+
+int plat_battery(void)
+{
+	const char *s = getenv("PWG_BATTERY");	/* tests: e.g. 71, or 199 charging */
+	return s ? atoi(s) : -1;
+}
+
 int plat_keys_held(void) { return getenv("PWG_HELD") != NULL; }
 void plat_power_off(void) {}
 static int32_t off_in = -1;

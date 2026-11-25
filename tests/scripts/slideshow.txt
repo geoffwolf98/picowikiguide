@@ -1,0 +1,52 @@
+# picture slideshow (1.1.0): F5 then S, the search filled with the
+# article being read; an article shows its own pictures, a list the
+# lead pictures of what it links to
+key down enter
+type london
+key enter
+key f5
+type s
+expect search "London" sel=0 "London" picking
+key enter
+expect slide "London" art=58 page=0 pic=0 shown=1
+key right
+expect page=1 pic=0 shown=2
+key left
+expect page=0 pic=0 shown=2 back=1
+key right
+expect page=1 pic=0 shown=2 back=0
+# the timer (5 s by default) moves on; Space pauses
+wait 6000
+expect shown=3
+key space
+expect paused
+wait 6000
+expect shown=3
+key space
+key esc
+expect article "London" page=1/156
+# options: Tab while choosing
+key f5
+type s
+key tab
+expect slideopts sel=0 all=0 levels=2 per=20 random=1 secs=5
+key down down down
+key left
+expect random=0
+key down
+key right right right
+expect secs=0
+key esc
+expect picking
+# a list: the lead pictures of its links (TOP100 has one of the states)
+key bs bs bs bs bs bs
+type list of states
+key enter
+expect slide "Washington, D.C."
+key right
+expect end
+# manual: no timer
+wait 6000
+expect end
+key enter
+expect article "Washington, D.C."

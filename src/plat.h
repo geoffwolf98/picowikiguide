@@ -35,6 +35,11 @@ int plat_keys_held(void);		/* a key held at start (safe mode) */
 uint32_t plat_ms(void);
 void plat_keepalive(void);		/* long work: feeds the watchdog */
 void plat_power_off(void);
+/* battery: percent 0-100, plus 128 while charging; -1 if not known
+ * (read at most every 30 s) */
+int plat_battery(void);
+/* something is going on (a slideshow): no idle switch-off yet */
+void plat_stay_awake(void);
 /* restart the device (state already saved); returns where there is
  * no such thing (the PC) */
 void plat_restart(void);

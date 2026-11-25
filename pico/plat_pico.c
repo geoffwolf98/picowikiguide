@@ -243,6 +243,27 @@ int plat_wait(plat_event_t *e)
 	}
 }
 
+void plat_stay_awake(void)
+{
+	last_key = plat_ms();
+}
+
+int plat_battery(void)
+{
+	/* the keyboard controller: low 7 bits the percent, bit 7 charging
+	 * (71 = 71%, 199 = 71% and charging; as the UF2 loader shows) */
+	static int last = -1;
+	static uint32_t at;
+	static int read;
+	if (!read || plat_ms() - at >= 30000) {
+		int b = kbd_battery();
+		read = 1;
+		at = plat_ms();
+		last = b < 0 || (b & 0x7f) > 100 ? -1 : b;
+	}
+	return last;
+}
+
 int plat_keys_held(void)
 {
 	return held_at_start;
