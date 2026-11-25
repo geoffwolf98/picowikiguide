@@ -119,7 +119,8 @@ int wiki_draw_scratch(uint8_t **frame, page_t **pg);	/* -1: no room */
 /* the picture buffer, made once at start before anything else big:
  * normal (311 x 255, a picture that will not fit in colour goes grey)
  * or big (a screen of colour, 16 KB more); returns big as made */
-int wiki_picbuf(int big);
+int wiki_picbuf(int big, int none);	/* none: a wiki without pictures,
+					 * only the drawing scratch (1.0.0) */
 /* 1 if the picture can be read and is the size the page says (tests) */
 int wiki_picture_ok(wiki_t *w, const page_pic_t *pp);
 /* called before a wiki_open() that has to write the dictionary to flash

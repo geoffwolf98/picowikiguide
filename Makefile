@@ -63,7 +63,16 @@ $(BUILD)/dicttest: $(call obj,tests/dicttest.c src/dictsync.c,app)
 $(BUILD)/ovtest: $(call obj,tests/ovtest.c src/present.c src/overlay.c,app)
 	$(CC) -o $@ $^
 
-$(BUILD)/app/%.o: %.c
+# a new version rebuilds everything of ours: unpacking a release keeps
+# the files' old times, so make could think an old build up to date
+PWG_VER := $(shell sed -n 's/^\#define PWG_VERSION "\(.*\)"/\1/p' src/zw.h)
+STAMP   := $(BUILD)/version-$(PWG_VER)
+$(STAMP):
+	@mkdir -p $(BUILD)
+	@rm -f $(BUILD)/version-*
+	@touch $@
+
+$(BUILD)/app/%.o: %.c $(STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(APP_INC) -c $< -o $@
 
@@ -82,7 +91,7 @@ $(BUILD)/webp/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -w -Ithird_party/libwebp -c $< -o $@
 
-$(BUILD)/prep/%.o: %.c
+$(BUILD)/prep/%.o: %.c $(STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(PREP_INC) -c $< -o $@
 

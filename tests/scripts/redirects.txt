@@ -1,0 +1,22 @@
+# section redirects (1.0.0): Kiwix's one-line forwarding pages are
+# redirects to a section; opening one goes to the heading
+key down enter
+type croaking
+expect search "croaking" sel=0 "Croaking"
+key enter
+expect article "Frog" page=85/187 y=131
+# the old anchor style (".22" for a quote) is matched too
+key f1 f1
+type lock-and-key model
+key enter
+expect article "Enzyme" page=31/99 y=39
+# a section name with an apostrophe
+key f1 f1
+type return youtube dislike
+key enter
+expect article "YouTube" page=26/146 y=215
+# another
+key f1 f1
+type mane (lion)
+key enter
+expect article "Lion" page=35/132 y=68

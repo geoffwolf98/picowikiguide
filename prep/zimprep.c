@@ -10,7 +10,13 @@
  *   --dict-kb N    zstd dictionary size in KiB (default and most 112, 0 = none)
  *   --font FILE    the Unicode fallback font (default: fonts/WIKIFONT.BIN
  *                  next to the build folder); must match the firmware's
+ *   --pictures none|lead|all   pictures (default all; none: text only)
+ *   --grey         grey pictures (default colour; --colour still accepted)
+ *   --jpeg-quality N, --pic-height N   colour quality, most picture height
  *   --version
+ *
+ * The version and the picture settings are printed at the start of every
+ * run.  A ZIM without pictures (nopic, mini) makes a text-only wiki.
  *
  * Writes OUTDIR/NAME/ with NAME.TOC, NAME.P00..., NAME.IDX, NAME.HIS
  * and NAME.FAV.  Copy the NAME folder to the top of the SD card.
@@ -275,8 +281,8 @@ static int is_blank(const lay_line_t *ln)
 	return ln->nfrag == 0 && ln->deco == LD_NONE;	/* a picture line is not */
 }
 
-static int g_pics;		/* PICS_NONE, PICS_LEAD, PICS_ALL */
-static int g_colour, g_jpeg_q = 75;	/* --colour, --jpeg-quality */
+static int g_pics = PICS_ALL;	/* PICS_NONE, PICS_LEAD, PICS_ALL (1.0.0: all) */
+static int g_colour = 1, g_jpeg_q = 75;	/* --grey, --jpeg-quality (1.0.0: colour) */
 static int g_pic_h = 255;		/* --pic-height */
 
 /* lay out article number `art` and turn it into frames.  With raw set,
@@ -551,15 +557,26 @@ static size_t clip(const char *s)
 	return n;
 }
 
-static void add_record(const char *title, uint32_t target, uint8_t flags)
+/* a title record; with a section (sec not empty) the section name is
+ * kept after the title and a NUL (IDX_FLAG_SECTION), as long as both
+ * fit the 255 bytes: firmware before 1.0.0 shows the title and stops */
+static void add_record_sec(const char *title, const char *sec, uint32_t target, uint8_t flags)
 {
-	char key[512];
-	size_t tl = clip(title), kl;
+	char key[512], both[256];
+	size_t tl = clip(title), kl, sl = sec ? strlen(sec) : 0;
 	if (!tl || target == TOC_NONE)
 		return;
 	kl = fold_utf8(title, tl, key, sizeof(key));
 	if (!kl)
 		return;
+	if (sl && tl + 1 + sl <= 255) {
+		memcpy(both, title, tl);
+		both[tl] = 0;
+		memcpy(both + tl + 1, sec, sl);
+		title = both;
+		tl += 1 + sl;
+		flags |= IDX_FLAG_SECTION;
+	}
 	if (nrec == caprec) {
 		caprec = caprec ? caprec * 2 : 1 << 16;
 		recs = xrealloc(recs, caprec * sizeof(rec_t));
@@ -570,6 +587,299 @@ static void add_record(const char *title, uint32_t target, uint8_t flags)
 	recs[nrec].target = target;
 	recs[nrec].flags = flags;
 	nrec++;
+}
+
+static void add_record(const char *title, uint32_t target, uint8_t flags)
+{
+	add_record_sec(title, NULL, target, flags);
+}
+
+/* ------------------------------------------------------------------ */
+/* section redirects: Kiwix keeps a redirect to a section ("Croaking" to
+ * Frog#Call), which a ZIM redirect cannot hold, as a tiny page:
+ *
+ *   <html><head><title>T</title>
+ *   <meta http-equiv="refresh" content="0;URL='./Frog#Call'" />
+ *   </head><body><a href="./Frog#Call">T</a></body></html>
+ *
+ * Such a page (under 2 KB, one refresh with no delay, a body of just one
+ * link to the same place) is made a redirect record to its target, with
+ * the section, instead of a one-line article.  Links to it go to the
+ * target too. */
+
+static void progress(const char *what, uint64_t done, uint64_t total);
+
+#define STUB_MAX 2048
+static uint32_t *g_stub_to;	/* per entry: target entry, TOC_NONE if not a stub */
+static uint32_t *g_stub_sec;	/* per entry: section offset in g_secs */
+static pool_t g_secs;
+static pthread_mutex_t g_stub_mx = PTHREAD_MUTEX_INITIALIZER;
+
+typedef struct cand {
+	uint32_t cluster, blob, entry;
+} cand_t;
+
+static int cand_cmp(const void *a, const void *b)
+{
+	const cand_t *x = a, *y = b;
+	if (x->cluster != y->cluster)
+		return x->cluster < y->cluster ? -1 : 1;
+	return x->blob < y->blob ? -1 : x->blob > y->blob;
+}
+
+static const char *find_n(const char *h, size_t n, const char *needle)
+{
+	size_t k = strlen(needle), i;
+	for (i = 0; i + k <= n; ++i)
+		if (memcmp(h + i, needle, k) == 0)
+			return h + i;
+	return NULL;
+}
+
+static int count_n(const char *h, size_t n, const char *needle)
+{
+	int c = 0;
+	const char *e = h + n, *q = h;
+	while ((q = find_n(q, (size_t)(e - q), needle))) {
+		c++;
+		q++;
+	}
+	return c;
+}
+
+static int hexv(int c)
+{
+	return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 :
+	       c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+/* the page at entry url, if a section redirect stub: its target address
+ * (as written, e.g. "./Frog#Call") into to; 0 if a stub */
+static int stub_target(const char *h, size_t n, char *to, size_t cap)
+{
+	const char *m, *u, *end, *q, *b, *be, *a;
+	size_t tl;
+	if (n >= STUB_MAX || count_n(h, n, "http-equiv=\"refresh\"") != 1 || count_n(h, n, "<a ") != 1)
+		return -1;
+	m = find_n(h, n, "http-equiv=\"refresh\"");
+	if (!(u = find_n(m, (size_t)(h + n - m), "content=\"0;URL='")))
+		return -1;
+	u += strlen("content=\"0;URL='");
+	if (!(end = find_n(u, (size_t)(h + n - u), ">")))
+		return -1;
+	/* the address ends at the last ' before the tag's end (it may hold
+	 * quotes itself) */
+	for (q = end; q > u && *q != '\''; --q)
+		;
+	if (q <= u || (tl = (size_t)(q - u)) >= cap)
+		return -1;
+	memcpy(to, u, tl);
+	to[tl] = 0;
+	/* the body: one link to the same place, nothing else */
+	if (!(b = find_n(h, n, "<body>")) || !(be = find_n(b, (size_t)(h + n - b), "</body>")))
+		return -1;
+	b += 6;
+	while (b < be && (*b == ' ' || *b == '\n' || *b == '\r' || *b == '\t'))
+		b++;
+	while (be > b && (be[-1] == ' ' || be[-1] == '\n' || be[-1] == '\r' || be[-1] == '\t'))
+		be--;
+	a = b;
+	if ((size_t)(be - a) < 9 + tl + 2 + 4 || memcmp(a, "<a href=\"", 9) != 0 ||
+	    memcmp(a + 9, to, tl) != 0 || memcmp(a + 9 + tl, "\">", 2) != 0 ||
+	    memcmp(be - 4, "</a>", 4) != 0)
+		return -1;
+	/* no tags in the link text */
+	for (q = a + 9 + tl + 2; q < be - 4; ++q)
+		if (*q == '<')
+			return -1;
+	return 0;
+}
+
+/* address relative to entry url -> ZIM path (percent decoded, . and ..
+ * resolved) and section (percent decoded, '_' as space) */
+static int stub_split(const char *url, const char *to, char *path, size_t pcap, char *sec, size_t scap)
+{
+	char dec[1024], *seg[64], *q;
+	size_t o = 0, i, at = 0;
+	int nseg = 0, k;
+	const char *hash = strchr(to, '#');
+	size_t pl = hash ? (size_t)(hash - to) : strlen(to);
+	sec[0] = 0;
+	if (hash) {
+		size_t so = 0;
+		for (i = 1; hash[i] && so + 1 < scap; ++i) {
+			if (hash[i] == '%' && hexv(hash[i + 1]) >= 0 && hexv(hash[i + 2]) >= 0) {
+				sec[so++] = (char)(hexv(hash[i + 1]) * 16 + hexv(hash[i + 2]));
+				i += 2;
+			} else {
+				sec[so++] = hash[i] == '_' ? ' ' : hash[i];
+			}
+		}
+		sec[so] = 0;
+	}
+	/* base directory of the stub, then the address */
+	q = strrchr(url, '/');
+	if (q && to[0] != '/') {
+		at = (size_t)(q - url) + 1;
+		if (at >= sizeof(dec))
+			return -1;
+		memcpy(dec, url, at);
+	}
+	o = at;
+	for (i = to[0] == '/' ? 1 : 0; i < pl && o + 1 < sizeof(dec); ++i) {
+		if (to[i] == '%' && i + 2 < pl && hexv(to[i + 1]) >= 0 && hexv(to[i + 2]) >= 0) {
+			dec[o++] = (char)(hexv(to[i + 1]) * 16 + hexv(to[i + 2]));
+			i += 2;
+		} else {
+			dec[o++] = to[i];
+		}
+	}
+	dec[o] = 0;
+	for (q = dec; *q && nseg < 64;) {
+		char *st = q;
+		while (*q && *q != '/')
+			q++;
+		if (*q)
+			*q++ = 0;
+		if (!*st || strcmp(st, ".") == 0)
+			continue;
+		if (strcmp(st, "..") == 0) {
+			if (nseg)
+				nseg--;
+			continue;
+		}
+		seg[nseg++] = st;
+	}
+	if (!nseg)
+		return -1;
+	o = 0;
+	for (k = 0; k < nseg; ++k) {
+		size_t l = strlen(seg[k]);
+		if (o + l + 2 > pcap)
+			return -1;
+		if (k)
+			path[o++] = '/';
+		memcpy(path + o, seg[k], l);
+		o += l;
+	}
+	path[o] = 0;
+	return 0;
+}
+
+typedef struct stub_job {
+	pthread_t th;
+	const cand_t *c;
+	uint32_t n;
+	zim_t z;
+	host_files_t files;
+	uint32_t found;
+} stub_job_t;
+
+static volatile uint32_t g_stub_done;
+static volatile int g_stub_left;	/* threads still going */
+static uint32_t g_nstubs;
+
+static void *stub_work(void *arg)
+{
+	stub_job_t *j = arg;
+	uint32_t i;
+	char to[1024], path[1024], sec[256];
+	for (i = 0; i < j->n; ++i) {
+		const uint8_t *data;
+		uint32_t len, t, fin;
+		zim_dirent_t d, fd;
+		if (i % 4096 == 0)
+			__sync_fetch_and_add(&g_stub_done, i ? 4096 : 0);
+		if (zim_blob(&j->z, j->c[i].cluster, j->c[i].blob, &data, &len) < 0 ||
+		    stub_target((const char *)data, len, to, sizeof(to)) < 0)
+			continue;
+		if (zim_dirent(&j->z, j->c[i].entry, &d) < 0 ||
+		    stub_split(d.url, to, path, sizeof(path), sec, sizeof(sec)) < 0 ||
+		    zim_find(&j->z, j->z.content_ns, path, &t) < 0 ||
+		    zim_follow(&j->z, t, &fin, &fd) < 0 || fd.ns != j->z.content_ns ||
+		    !is_html(&j->z, fd.mime) || fin >= j->z.entry_count || fin == j->c[i].entry)
+			continue;
+		pthread_mutex_lock(&g_stub_mx);
+		g_stub_to[j->c[i].entry] = fin;
+		g_stub_sec[j->c[i].entry] = sec[0] ? pool_add(&g_secs, sec, strlen(sec)) : 0xffffffffu;
+		pthread_mutex_unlock(&g_stub_mx);
+		j->found++;
+	}
+	__sync_fetch_and_sub(&g_stub_left, 1);
+	return NULL;
+}
+
+/* find the stubs: every small HTML page is read, in the order the ZIM
+ * stores them (each cluster decoded once), by all threads */
+static void find_stubs(zim_t *z, const char *input)
+{
+	cand_t *c = xmalloc((size_t)z->entry_count * sizeof(cand_t));
+	uint32_t n = 0, i, per, found = 0, chained = 0, k;
+	stub_job_t *jobs;
+	int t;
+	g_stub_to = xmalloc((size_t)z->entry_count * sizeof(uint32_t));
+	g_stub_sec = xmalloc((size_t)z->entry_count * sizeof(uint32_t));
+	for (i = 0; i < z->entry_count; ++i) {
+		zim_dirent_t d;
+		g_stub_to[i] = TOC_NONE;
+		g_stub_sec[i] = 0xffffffffu;
+		if (zim_dirent(z, i, &d) < 0 || d.ns != z->content_ns || d.mime == ZIM_MIME_REDIRECT ||
+		    !is_html(z, d.mime))
+			continue;
+		c[n].cluster = d.cluster;
+		c[n].blob = d.blob;
+		c[n].entry = i;
+		n++;
+	}
+	qsort(c, n, sizeof(cand_t), cand_cmp);
+	jobs = xmalloc((size_t)g_nthreads * sizeof(stub_job_t));
+	memset(jobs, 0, (size_t)g_nthreads * sizeof(stub_job_t));
+	per = (n + (uint32_t)g_nthreads - 1) / (uint32_t)g_nthreads;
+	g_stub_done = 0;
+	g_stub_left = g_nthreads;
+	for (t = 0; t < g_nthreads; ++t) {
+		uint32_t from = (uint32_t)t * per;
+		jobs[t].c = c + (from < n ? from : n);
+		jobs[t].n = from < n ? (n - from < per ? n - from : per) : 0;
+		if (host_files_open(&jobs[t].files, input) < 0 || zim_open(&jobs[t].z, &jobs[t].files.io) < 0)
+			die("cannot read %s", input);
+		if (pthread_create(&jobs[t].th, NULL, stub_work, &jobs[t]) != 0)
+			die("cannot start a thread", "");
+	}
+	while (__sync_fetch_and_add(&g_stub_left, 0)) {
+		progress("finding section redirects", __sync_fetch_and_add(&g_stub_done, 0), n);
+		usleep(200000);
+	}
+	for (t = 0; t < g_nthreads; ++t) {
+		pthread_join(jobs[t].th, NULL);
+		found += jobs[t].found;
+		zim_close(&jobs[t].z);
+		host_files_close(&jobs[t].files);
+	}
+	progress("finding section redirects", n, n);
+	/* a stub to a stub: on to the end (its own section if it has one);
+	 * a loop or more than 8 steps: not a stub after all */
+	for (i = 0; i < z->entry_count; ++i) {
+		uint32_t to = g_stub_to[i];
+		if (to == TOC_NONE || g_stub_to[to] == TOC_NONE)
+			continue;
+		for (k = 0; k < 8 && g_stub_to[to] != TOC_NONE; ++k) {
+			if (g_stub_sec[i] == 0xffffffffu)
+				g_stub_sec[i] = g_stub_sec[to];
+			to = g_stub_to[to];
+		}
+		if (g_stub_to[to] != TOC_NONE || to == i) {
+			g_stub_to[i] = TOC_NONE;
+			found--;
+		} else {
+			g_stub_to[i] = to;
+			chained++;
+		}
+	}
+	free(c);
+	free(jobs);
+	g_nstubs = found;
+	(void)chained;
 }
 
 static void write_index(const char *path, const char *name, uint32_t main_art,
@@ -811,6 +1121,8 @@ int main(int argc, char **argv)
 		}
 		else if (strcmp(argv[a], "--colour") == 0 || strcmp(argv[a], "--color") == 0)
 			g_colour = 1;
+		else if (strcmp(argv[a], "--grey") == 0 || strcmp(argv[a], "--gray") == 0)
+			g_colour = 0;
 		else if (strcmp(argv[a], "--jpeg-quality") == 0 && a + 1 < argc)
 			g_jpeg_q = atoi(argv[++a]);
 		else if (strcmp(argv[a], "--pic-height") == 0 && a + 1 < argc) {
@@ -829,12 +1141,20 @@ int main(int argc, char **argv)
 	}
 	if (!input || !outdir) {
 		fprintf(stderr, "usage: zimprep [-n NAME] [--threads N] [--level N] [--dict-kb N] "
-			"[--pictures none|lead|all [--colour] [--jpeg-quality N] [--pic-height N]]\n"
+			"[--pictures none|lead|all] [--grey] [--jpeg-quality N] [--pic-height N]\n"
 			"       INPUT.zim OUTDIR\n");
 		return 2;
 	}
 	if (!name[0])
 		make_name(input, name);
+	/* what this run makes, so an old zimprep or a forgotten option shows */
+	if (g_pics == PICS_NONE)
+		fprintf(stderr, "zimprep (PicoWikiGuide) %s: %s, text only\n", PWG_VERSION, name);
+	else
+		fprintf(stderr, "zimprep (PicoWikiGuide) %s: %s, pictures %s, %s, height %d%s\n",
+			PWG_VERSION, name, g_pics == PICS_LEAD ? "lead" : "all",
+			g_colour ? "colour" : "grey", g_pic_h,
+			g_colour && g_jpeg_q != 75 ? " (JPEG quality set)" : "");
 	if (g_nthreads <= 0)
 		g_nthreads = (int)sysconf(_SC_NPROCESSORS_ONLN);
 	if (g_nthreads <= 0)
@@ -879,6 +1199,7 @@ int main(int argc, char **argv)
 	font_glyph(FONT_TEXTL, FONT_PIECE, &gw);
 
 	/* articles and titles */
+	find_stubs(&g_zim, input);
 	g_entry2art = xmalloc((size_t)g_zim.entry_count * sizeof(uint32_t));
 	g_arts = xmalloc((size_t)(g_zim.entry_count + 1) * sizeof(uint32_t));
 	for (i = 0; i < g_zim.entry_count; ++i) {
@@ -886,13 +1207,17 @@ int main(int argc, char **argv)
 		g_entry2art[i] = TOC_NONE;
 		if (zim_dirent(&g_zim, i, &d) < 0 || d.ns != g_zim.content_ns)
 			continue;
-		if (d.mime != ZIM_MIME_REDIRECT && is_html(&g_zim, d.mime)) {
+		if (d.mime != ZIM_MIME_REDIRECT && is_html(&g_zim, d.mime) && g_stub_to[i] == TOC_NONE) {
 			g_entry2art[i] = g_narts;
 			g_arts[g_narts++] = i;
 		}
 		progress("reading entries", i, g_zim.entry_count);
 	}
 	progress("reading entries", g_zim.entry_count, g_zim.entry_count);
+	/* a stub stands for its target: links to it go there */
+	for (i = 0; i < g_zim.entry_count; ++i)
+		if (g_stub_to[i] != TOC_NONE)
+			g_entry2art[i] = g_entry2art[g_stub_to[i]];
 	if (!g_narts)
 		die("no articles in %s", input);
 	for (i = 0; i < g_zim.entry_count; ++i) {
@@ -902,7 +1227,11 @@ int main(int argc, char **argv)
 			continue;
 		if (d.mime == ZIM_MIME_REDIRECT) {
 			if (zim_follow(&g_zim, i, &fin, &t) == 0 && fin < g_zim.entry_count)
-				add_record(d.title, g_entry2art[fin], IDX_FLAG_REDIRECT);
+				add_record_sec(d.title, g_stub_sec[fin] != 0xffffffffu ? g_secs.p + g_stub_sec[fin] : NULL,
+					       g_entry2art[fin], IDX_FLAG_REDIRECT);
+		} else if (g_stub_to[i] != TOC_NONE) {
+			add_record_sec(d.title, g_stub_sec[i] != 0xffffffffu ? g_secs.p + g_stub_sec[i] : NULL,
+				       g_entry2art[i], IDX_FLAG_REDIRECT);
 		} else if (g_entry2art[i] != TOC_NONE) {
 			add_record(d.title, g_entry2art[i], 0);
 		}
@@ -916,13 +1245,16 @@ int main(int argc, char **argv)
 		if (zim_follow(&g_zim, g_zim.main_page, &fin, &d) == 0 && fin < g_zim.entry_count)
 			main_art = g_entry2art[fin];
 	}
-	fprintf(stderr, "%s: %u articles, %zu titles, %d threads\n", input, g_narts, nrec, g_nthreads);
+	fprintf(stderr, "%s: %u articles, %zu titles, %u section redirects, %d threads\n", input, g_narts,
+		nrec, g_nstubs, g_nthreads);
 
 	/* pictures first: the layout needs their sizes */
 	pictures_colour(g_colour, g_jpeg_q);
 	pictures_max_height(g_pic_h);
 	if (pictures_make(&g_zim, input, g_base, g_pics, g_nthreads) < 0)
 		die("could not make the pictures%s", "");
+	if (g_pics != PICS_NONE && !pictures_count())
+		fprintf(stderr, "no pictures in this ZIM: a text-only wiki\n");
 
 	/* workers */
 	g_w = xmalloc(g_nthreads * sizeof(worker_t));

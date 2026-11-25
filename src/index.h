@@ -28,6 +28,9 @@
 #define IDX_STRIDE     128
 #define IDX_REC_HDR    6
 #define IDX_FLAG_REDIRECT 1
+/* the title is followed by a NUL and a section name (1.0.0): a redirect
+ * to a section of its target ("Croaking" to Frog, Call) */
+#define IDX_FLAG_SECTION  2
 
 /* header field offsets */
 enum {

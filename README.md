@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 0.9.12 (24 Nov 2026): scrolling.
+Version 1.0.0 (25 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-0.9.12.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-1.0.0.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -96,8 +96,8 @@ A "card" is a folder laid out like the SD card: one folder per wiki, plus
 `PWGSTATE.DAT`. zimprep makes both:
 
 ```
-build/zimprep -n TOP100 --pictures all --colour --pic-height 220 wikipedia_en_100_2026-08.zim ~/card
-build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
+build/zimprep -n TOP100 --pic-height 220 wikipedia_en_100_2026-08.zim ~/card
+build/zimprep -n CLIMATE --pictures none wikipedia_en_climate_change_mini_2024-06.zim ~/card
 ```
 
 * `-n NAME`: the folder and file name, up to 8 letters or digits. Without
@@ -108,7 +108,12 @@ build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
   PicoCalc has a fixed 112 KiB dictionary buffer).
 * `--font FILE`: the Unicode fallback font (default `fonts/WIKIFONT.BIN`
   of this source). It must be the one built into the firmware.
-* `--pictures none|lead|all`: pictures (default none). `lead`: the first
+Every run starts by printing zimprep's version and what it will make
+(`zimprep (PicoWikiGuide) 1.0.0: TOP100, pictures all, colour, height
+220`), so an old zimprep or a forgotten option shows at once.
+
+* `--pictures none|lead|all`: pictures (default all from 1.0.0; `none`
+  for a text-only wiki). `lead`: the first
   picture of each article; `all`: every picture (up to 32 an article).
   They are converted to the screen's four greys (dithered), at most
   311 x 255 pixels, and kept in `NAME.I00`, `NAME.I01`, ... A picture
@@ -119,7 +124,8 @@ build/zimprep -n CLIMATE wikipedia_en_climate_change_mini_2024-06.zim ~/card
   picture costs about 6 KB on the card; English Wikipedia with `lead`
   might need some 30 GB more (64 GB card), with `all` much more.
   Older firmware shows a blank space where a picture is.
-* `--colour` (with `--pictures`): colour pictures, kept as small JPEGs
+* Colour (the default from 1.0.0; `--grey` for the four greys,
+  `--colour` still accepted): colour pictures, kept as small JPEGs
   (about 10 KB each, 1.6 times the grey ones) and shown in 256 colours
   (RGB332 with ordered dithering). `--jpeg-quality N` (default 75) trades
   size for quality; a picture is made smaller until it fits the
@@ -137,13 +143,13 @@ Use a Wikipedia `maxi` ZIM (it has the pictures) and:
 
 | For | zimprep options | English Wikipedia (maxi, 2026-08) |
 |---|---|---|
-| The best look: colour pictures | `--pictures all --colour` | about 87 GiB (128 GB card), about 50 minutes on a 32-thread PC |
-| Colour, a little smaller | `--pictures all --colour --pic-height 220` | an estimated 6 to 13 GB less |
-| Grey pictures (the WikiReader look) | `--pictures all` | smaller again (grey pictures are about 0.6 of colour) |
+| The best look: colour pictures | (none: the default) | about 87 GiB (128 GB card), about 50 minutes on a 32-thread PC |
+| Colour, a little smaller | `--pic-height 220` | an estimated 6 to 13 GB less |
+| Grey pictures (the WikiReader look) | `--grey` | smaller again (grey pictures are about 0.6 of colour) |
 | Text only, smallest | `--pictures none` | 26 GB (32 GB card), about 23 minutes on a 32-thread PC; any ZIM, `nopic` and `mini` too |
 
 ```
-build/zimprep -n ENPEDIA --pictures all --colour wikipedia_en_all_maxi_2026-08.zim ~/card
+build/zimprep -n ENPEDIA wikipedia_en_all_maxi_2026-08.zim ~/card
 ```
 
 With firmware 0.9.0 or later the default picture height (255) is best:
@@ -237,7 +243,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=171316`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=169916`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -379,6 +385,18 @@ every title and prefixes of it with several index summary steps.
   hold Up for the boot loader's menu.
 * 0.9.12: Shift+O on F5 switches off (the place saved first; the power
   goes in about 6 s, as with the idle switch-off).
+* 1.0.0: section redirects. Kiwix keeps a redirect to a section
+  ("Croaking" to Frog, Call) as a one-line page with a link; zimprep now
+  finds those (a small page with one instant forward and one link to the
+  same place, nothing else) and makes them redirects in search, marked
+  `>`, that open at the heading when it can be found (TOP100: 1221 of
+  its 1323 "articles" were these; about 3.8 million in English
+  Wikipedia). Links to them go to the article. zimprep's defaults are
+  now colour pictures (`--pictures none` for text only, `--grey` for
+  grey); every run prints the version and settings; `make` rebuilds
+  everything when the version changes (unpacking a release keeps old
+  file times). A wiki without pictures no longer gets the picture
+  buffer: about 70 KB more free. Remake wikis to get the redirects.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

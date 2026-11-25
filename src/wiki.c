@@ -415,9 +415,13 @@ int wiki_draw_scratch(uint8_t **frame, page_t **pg)
 	return 0;
 }
 
-int wiki_picbuf(int big)
+int wiki_picbuf(int big, int none)
 {
-	uint32_t want = big ? PICBUF_BIG : PICBUF_NORMAL;
+	/* none (a wiki without pictures): only room to draw a third page */
+	uint32_t scratch = FRAME_MAX + ((sizeof(page_t) + 7u) & ~7u);
+	uint32_t want = none ? scratch : big ? PICBUF_BIG : PICBUF_NORMAL;
+	if (none)
+		big = 0;
 	if (s_picbuf && s_picbuf_size == want)
 		return big;
 	pc_reset();
@@ -428,6 +432,10 @@ int wiki_picbuf(int big)
 	if (!s_picbuf && big) {
 		big = 0;
 		s_picbuf_size = PICBUF_NORMAL;
+		s_picbuf = zw_alloc(s_picbuf_size);
+	}
+	if (!s_picbuf && !none) {
+		s_picbuf_size = scratch;
 		s_picbuf = zw_alloc(s_picbuf_size);
 	}
 	if (!s_picbuf)

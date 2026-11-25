@@ -4,8 +4,8 @@
 #   CARD=/path/to/card sh tests/run.sh
 # where CARD holds CLIMATE (wikipedia_en_climate_change_mini_2024-06.zim
 # from openzim's zim-testing-suite), TOP100 (wikipedia_en_100_2026-08.zim
-# with zimprep -n TOP100 --pictures all --colour --pic-height 220) and, for the grey
-# picture test, TOP100G (the same with -n TOP100G, without --colour).
+# with zimprep -n TOP100 --pic-height 220, from 1.0.0) and, for the grey
+# picture test, TOP100G (the same with -n TOP100G --grey).
 #
 # The scripts run with a heap like the PicoCalc's (PWG_HEAP bytes: the
 # firmware's heap, 0x20080000 minus the end of .bss; see README), on the
@@ -13,7 +13,7 @@
 # it read with the PicoCalc's own file code (IMG=0 to skip).
 set -e
 CARD=${CARD:?set CARD to the test card folder}
-export PWG_HEAP=${PWG_HEAP:-171316}
+export PWG_HEAP=${PWG_HEAP:-169916}
 fail=0
 run_scripts() {	# $1: program, $2: card or image, $3: label
 	for s in tests/scripts/*.txt; do

@@ -139,6 +139,7 @@ static struct app {
 	int calc_rad;
 	int pic_big;		/* big picture buffer (always colour) made */
 	int pic_grey;		/* chosen: normal buffer, grey if short of room */
+	int pic_none;		/* the wiki has no pictures: no buffer for them */
 } A;
 
 /* ------------------------------------------------------------------ */
@@ -486,6 +487,23 @@ static void find_wikis(void)
 			plat_close(&io);
 		}
 	}
+}
+
+/* does wiki name have pictures (its TOC's count)?  Yes if unreadable */
+static int wiki_has_pictures(const char *name)
+{
+	char path[40];
+	zw_io_t io;
+	uint8_t b[4];
+	int r = 1;
+	snprintf(path, sizeof(path), "%s/%s.TOC", name, name);
+	if (plat_open(path, &io) < 0)
+		return 1;
+	if (zw_io_read(&io, 0, b, 4) == 0 && zw_rd32(b) == TOC_MAGIC &&
+	    zw_io_read(&io, TOC_H_PICS, b, 4) == 0)
+		r = zw_rd32(b) != 0;
+	plat_close(&io);
+	return r;
 }
 
 static int open_wiki(const char *name)
@@ -1086,6 +1104,54 @@ static void show_section(int i)
 		A.yoff = y;
 }
 
+static int hexup(int c)
+{
+	return c >= '0' && c <= '9' ? c - '0' : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+/* the old anchor style: ".22" for '"', ".C3.A9" for an e acute */
+static size_t dot_decode(const char *s, char *out, size_t cap)
+{
+	size_t o = 0;
+	while (*s && o + 1 < cap) {
+		int h = *s == '.' ? hexup(s[1]) : -1, l = h >= 0 ? hexup(s[2]) : -1;
+		if (h >= 0 && l >= 0) {
+			out[o++] = (char)(h * 16 + l);
+			s += 3;
+		} else {
+			out[o++] = *s++;
+		}
+	}
+	out[o] = 0;
+	return o;
+}
+
+/* go to the section called name (a redirect to a section, 1.0.0), if
+ * the article has one: the folded names must match, as given or with
+ * the old anchor style decoded */
+static void show_section_named(const char *name)
+{
+	static char want[2][sizeof(((wiki_section_t *)0)->title) * 4], have[sizeof(want[0])];
+	static char dec[sizeof(((wiki_section_t *)0)->title) * 2];
+	size_t wl[2];
+	int n, i, k;
+	wl[0] = fold_utf8(name, strlen(name), want[0], sizeof(want[0]) - 1);
+	dot_decode(name, dec, sizeof(dec));
+	wl[1] = fold_utf8(dec, strlen(dec), want[1], sizeof(want[1]) - 1);
+	if (!wl[0])
+		return;
+	n = wiki_sections(&A.w, &A.a, A.sec, SEC_MAX);
+	A.nsec = n;
+	for (k = 0; k < 2; ++k)
+		for (i = 0; i < n; ++i) {
+			size_t hl = fold_utf8(A.sec[i].title, strlen(A.sec[i].title), have, sizeof(have) - 1);
+			if (wl[k] && hl == wl[k] && !memcmp(have, want[k], hl)) {
+				show_section(i);
+				return;
+			}
+		}
+}
+
 /* the next (dir 1) or previous section from where the screen is now:
  * a heading further down the page shown counts as next */
 static void section_jump(int dir)
@@ -1343,7 +1409,8 @@ static void draw_help(void)
 		const char *act = keys[i][1];
 		y = TOPBAR_H + 2 + (int)i * HROW;
 		if (!act)
-			act = A.pic_big ? "Pictures: always colour"
+			act = A.pic_none ? "Pictures: none in this wiki"
+			      : A.pic_big ? "Pictures: always colour"
 			      : A.pic_grey ? "Pictures: grey if short"
 			      : "Pictures: grey (no room)";
 		if (i)	/* a rule between rows: black on white reads best */
@@ -1531,7 +1598,8 @@ static void search_keys(int key)
 		for (i = 0; i <= A.sel; ++i)
 			if (!idx_next(&A.idx, &c, &r))
 				return;
-		open_article(r.target, 0, 1);
+		if (open_article(r.target, 0, 1) == 0 && (r.flags & IDX_FLAG_SECTION))
+			show_section_named(r.title + strlen(r.title) + 1);
 	} else if (key == K_ESC) {
 		if (A.query[0]) {
 			A.query[0] = 0;
@@ -1971,9 +2039,21 @@ void app_init(void)
 		st = NULL;
 		len = 0;
 	}
-	/* the picture buffer first, before any wiki is opened */
+	/* the picture buffer first, before any wiki is opened: none for a
+	 * wiki without pictures (the one to open: the state's, or the only
+	 * one) */
 	A.pic_grey = st && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe && st[42];
-	A.pic_big = wiki_picbuf(!A.pic_grey);
+	{
+		char name[16] = "";
+		if (st && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe) {
+			memcpy(name, st + 4, 16);
+			name[15] = 0;
+		} else if (A.nwikis == 1) {
+			snprintf(name, sizeof(name), "%s", A.wikis[0]);
+		}
+		A.pic_none = name[0] && !wiki_has_pictures(name);
+	}
+	A.pic_big = wiki_picbuf(!A.pic_grey, A.pic_none);
 	if (st && len >= 48 && zw_rd32(st) == STATE_MAGIC && !safe) {
 		char name[16];
 		memcpy(&A.calc_ans, st + 32, sizeof(double));
@@ -2156,7 +2236,7 @@ void app_describe(char *out, size_t cap)
 		snprintf(out, cap, "calc \"%s\" = \"%s\"", A.calc_in, A.calc_out);
 		break;
 	case S_HELP:
-		snprintf(out, cap, "help pictures=%s", A.pic_big ? "colour" : "grey");
+		snprintf(out, cap, "help pictures=%s", A.pic_none ? "none" : A.pic_big ? "colour" : "grey");
 		break;
 	case S_WIKIS:
 		snprintf(out, cap, "wikis n=%d sel=%d", A.nwikis, A.wiki_sel);
