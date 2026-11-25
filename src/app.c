@@ -142,10 +142,11 @@ static struct app {
 	int pic_grey;		/* chosen: normal buffer, grey if short of room */
 	int pic_none;		/* the wiki has no pictures: no buffer for them */
 	int bat_shown;		/* the battery reading last drawn */
-	/* slideshow options (kept at 43..47 of the state, each + 1):
+	/* slideshow options (kept at 43..47 and 116 of the state, each + 1):
 	 * pictures all, depth 2, links per list (index), random, seconds
-	 * (index) */
-	uint8_t ss_opt[5];
+	 * (index), never switch off at low battery, follow any article's
+	 * links (117) */
+	uint8_t ss_opt[7];
 	int ss_osel;
 	int ss_ret;		/* the screen the slideshow was started from */
 	uint32_t ss_art;	/* where it starts, TOC_NONE: not chosen */
@@ -404,6 +405,8 @@ static void write_state(const char *name, int keep_art)
 	b[42] = (uint8_t)A.pic_grey;	/* pictures: grey if short (0.9.5) */
 	for (i = 0; i < 5; ++i)		/* slideshow options (1.1.0) */
 		b[43 + i] = (uint8_t)(A.ss_opt[i] + 1);
+	b[116] = (uint8_t)(A.ss_opt[5] + 1);	/* (1.1.2) */
+	b[117] = (uint8_t)(A.ss_opt[6] + 1);	/* (1.1.3) */
 	if (keep_art) {
 		memcpy(b + 48, A.query, QUERY_MAX);
 		zw_wr16(b + 112, (uint16_t)A.sel);
@@ -1220,8 +1223,10 @@ static void section_jump(int dir)
  * list, in order or picked at random.  Pages are decoded into the
  * picture buffer's spare room, so it needs no page buffers of its own. */
 
-enum { SS_LV = 2, SS_HIST = 20, SS_SEEN = 256 };
-static const uint8_t ss_per_v[] = { 10, 20, 50 };
+static void draw(void);
+
+enum { SS_LV = 2, SS_HIST = 20, SS_SEEN = 512 };
+static const uint8_t ss_per_v[] = { 10, 20, 50, 100 };
 static const uint8_t ss_secs_v[] = { 3, 5, 10, 20, 0 };
 
 typedef struct ss_item {
@@ -1232,8 +1237,8 @@ typedef struct ss_item {
 
 typedef struct ss_level {
 	uint32_t art;
-	uint16_t pages, page, start, line, taken;
-	uint8_t wrapped;
+	uint16_t pages, page, start, line, taken;	/* line: item with all */
+	uint8_t wrapped, all;	/* all: every link (an ordinary article) */
 } ss_level_t;
 
 static struct {
@@ -1386,7 +1391,7 @@ static void ss_show(const ss_item_t *it)
 	ss_load(it);
 }
 
-static void ss_push(uint32_t art)
+static void ss_push(uint32_t art, int all)
 {
 	wiki_art_t a;
 	ss_level_t *L;
@@ -1398,12 +1403,13 @@ static void ss_push(uint32_t art)
 	L->pages = a.pages;
 	L->start = A.ss_opt[3] ? (uint16_t)ss_rand(a.pages) : 0;
 	L->page = L->start;
+	L->all = (uint8_t)all;
 }
 
 /* the next link of the list being walked; -1 when all are done */
 static int ss_next_link(uint32_t *target)
 {
-	unsigned per = ss_per_v[A.ss_opt[2] % 3];
+	unsigned per = ss_per_v[A.ss_opt[2] % 4];
 	while (SS.nlv) {
 		ss_level_t *L = &SS.lv[SS.nlv - 1];
 		wiki_art_t a;
@@ -1432,8 +1438,30 @@ static int ss_next_link(uint32_t *target)
 			SS.nlv--;
 			continue;
 		}
+		if (L->all) {
+			/* an ordinary article: every link, in the order met */
+			for (l = 0; l < pg->nitems; ++l)
+				if (pg->items[l].slot != PI_NOLINK && pg->links[pg->items[l].slot] < A.w.articles)
+					n++;
+			est = (uint32_t)n * L->pages;
+			for (; L->line < pg->nitems; L->line++) {
+				const page_item_t *it = &pg->items[L->line];
+				uint32_t t;
+				if (it->slot == PI_NOLINK || (t = pg->links[it->slot]) >= A.w.articles || t == L->art)
+					continue;
+				if (A.ss_opt[3] && est > per && (uint32_t)ss_rand(est) >= per)
+					continue;
+				L->line++;
+				*target = t;
+				return 0;
+			}
+			L->page++;
+			L->line = 0;
+			continue;
+		}
 		for (l = 0; l < pg->nlines; ++l)
-			if (pg->lines[l].nitems && pg->items[pg->lines[l].first].slot != PI_NOLINK)
+			if (pg->lines[l].nitems && pg->items[pg->lines[l].first].slot != PI_NOLINK &&
+			    pg->links[pg->items[pg->lines[l].first].slot] < A.w.articles)
 				n++;
 		est = (uint32_t)n * L->pages;
 		for (; L->line < pg->nlines; L->line++) {
@@ -1486,7 +1514,7 @@ static int ss_advance(void)
 		ss_title_of(pg, title, sizeof(title));
 		if (A.ss_opt[1] && SS.nlv == 1 && ss_is_list(title)) {
 			SS.lv[0].taken++;
-			ss_push(t);
+			ss_push(t, 0);
 			continue;
 		}
 		if (ss_find_pic(t, 0, 0, lead ? 3 : a.pages, &it) == 0) {
@@ -1516,13 +1544,20 @@ static void ss_start(uint32_t root)
 	SS.root_list = ss_is_list(title);
 	if (SS.root_list) {
 		ss_seen(root);
-		ss_push(root);
+		ss_push(root, 0);
 	} else {
-		/* its own pictures, all of them */
+		/* its own pictures, all of them; then, when following any
+		 * article's links, the lead pictures of what it links to */
 		SS.cur.art = root;
 		SS.cur.page = 0;
 		SS.cur.pic = -1;
 		SS.in_art = 1;
+		if (A.ss_opt[6]) {
+			ss_seen(root);
+			ss_push(root, 1);
+			SS.root_list = 1;
+			SS.lv[0].start = SS.lv[0].page = 0;	/* from the top: its own order */
+		}
 	}
 	A.prev_screen = A.ss_ret;
 	A.screen = S_SLIDE;
@@ -1545,7 +1580,7 @@ static void ss_setup(void)
 	} else if (A.ss_art == 0 && !A.ss_title[0]) {
 		A.ss_art = TOC_NONE;
 	}
-	A.ss_osel = A.ss_art == TOC_NONE ? 0 : 6;	/* on Start, or on choosing */
+	A.ss_osel = A.ss_art == TOC_NONE ? 0 : 8;	/* on Start, or on choosing */
 	A.screen = S_SLIDEOPT;
 }
 
@@ -1636,15 +1671,18 @@ static void draw_slide(void)
 	}
 }
 
-static const char *const ss_opt_name[5] = { "Pictures", "Lists", "Links per list", "Order", "Each picture" };
+static const char *const ss_opt_name[7] = { "Pictures", "Lists", "Links per list", "Order", "Each picture",
+					      "Low battery", "Follow links" };
 
 static const char *ss_opt_val(int i, char *buf, size_t cap)
 {
 	switch (i) {
 	case 0: return A.ss_opt[0] ? "all of each article" : "lead only";
 	case 1: return A.ss_opt[1] ? "2 levels (lists of lists)" : "1 level";
-	case 2: snprintf(buf, cap, "%u", ss_per_v[A.ss_opt[2] % 3]); return buf;
+	case 2: snprintf(buf, cap, "%u", ss_per_v[A.ss_opt[2] % 4]); return buf;
 	case 3: return A.ss_opt[3] ? "random" : "in order";
+	case 5: return A.ss_opt[5] ? "keep going" : "switch off at 20%";
+	case 6: return A.ss_opt[6] ? "of any article" : "of lists only";
 	default:
 		if (!ss_secs_v[A.ss_opt[4] % 5])
 			return "by hand (Right)";
@@ -1653,7 +1691,7 @@ static const char *ss_opt_val(int i, char *buf, size_t cap)
 	}
 }
 
-/* the slideshow screen: row 0 where to start, 1-5 the options, 6 Start */
+/* the slideshow screen: row 0 where to start, 1-7 the options, 8 Start */
 static void draw_slideopt(void)
 {
 	int i;
@@ -1661,13 +1699,13 @@ static void draw_slideopt(void)
 	const char *h;
 	gfx_fill(A.fb, SCREEN_STRIDE, SCREEN_H, 0, 0, SCREEN_W, SCREEN_H, WHITE);
 	topbar("Picture slideshow", NULL);
-	for (i = 0; i < 7; ++i) {
-		int y = TOPBAR_H + 8 + i * 30 + (i == 6 ? 8 : 0);
+	for (i = 0; i < 9; ++i) {
+		int y = TOPBAR_H + 4 + i * 28 + (i == 8 ? 6 : 0);
 		if (i == 0) {
 			text(10, y + 14, BAR_FONT, "Start from", BLACK);
 			text_fit(118, y + 14, BAR_FONT, A.ss_art != TOC_NONE ? A.ss_title : "(choose an article)",
 				 SCREEN_W - 126, BLACK);
-		} else if (i < 6) {
+		} else if (i < 8) {
 			text(10, y + 14, BAR_FONT, ss_opt_name[i - 1], BLACK);
 			text(118, y + 14, BAR_FONT, ss_opt_val(i - 1, b, sizeof(b)), BLACK);
 		} else {
@@ -1679,26 +1717,26 @@ static void draw_slideopt(void)
 			sel_box(4, y, SCREEN_W - 8, 22, y + 14, 0);
 	}
 	h = A.ss_osel == 0 ? "Enter: choose the article  Esc: back"
-	    : A.ss_osel == 6 ? "Enter: start  Up: options  Esc: back"
+	    : A.ss_osel == 8 ? "Enter: start  Up: options  Esc: back"
 	    : "Left/Right: change  Up/Down: move  Esc: back";
 	hint(h);
 }
 
 static void slideopt_keys(int key)
 {
-	static const uint8_t n[5] = { 2, 2, 3, 2, 5 };
+	static const uint8_t n[7] = { 2, 2, 4, 2, 5, 2, 2 };
 	int o = A.ss_osel - 1;
 	if (key == K_UP && A.ss_osel > 0)
 		A.ss_osel--;
-	else if ((key == K_DOWN || key == K_TAB) && A.ss_osel < 6)
+	else if ((key == K_DOWN || key == K_TAB) && A.ss_osel < 8)
 		A.ss_osel++;
 	else if (A.ss_osel == 0 && key == K_ENTER)
 		ss_pick();
-	else if (o >= 0 && o < 5 && (key == K_RIGHT || key == K_ENTER || key == ' '))
+	else if (o >= 0 && o < 7 && (key == K_RIGHT || key == K_ENTER || key == ' '))
 		A.ss_opt[o] = (uint8_t)((A.ss_opt[o] + 1) % n[o]);
-	else if (o >= 0 && o < 5 && key == K_LEFT)
+	else if (o >= 0 && o < 7 && key == K_LEFT)
 		A.ss_opt[o] = (uint8_t)((A.ss_opt[o] + n[o] - 1) % n[o]);
-	else if (A.ss_osel == 6 && key == K_ENTER) {
+	else if (A.ss_osel == 8 && key == K_ENTER) {
 		if (A.ss_art == TOC_NONE) {
 			A.ss_osel = 0;
 			return;
@@ -1752,8 +1790,20 @@ static int ss_tick(void)
 {
 	unsigned secs = ss_secs_v[A.ss_opt[4] % 5];
 	int hint_gone = A.screen == S_SLIDE && SS.hint_t0 && plat_ms() - SS.hint_t0 >= 4000;
+	int bat = plat_battery();
 	if (hint_gone)
 		SS.hint_t0 = 0;
+	/* left running: off at 20% (not while charging), the place saved */
+	if (A.screen == S_SLIDE && !A.ss_opt[5] && bat >= 0 && !(bat & 0x80) && (bat & 0x7f) <= 20) {
+		A.screen = A.ss_ret == S_ARTICLE && A.have_art ? S_ARTICLE : S_SEARCH;
+		save_positions();
+		save_state();
+		snprintf(A.msg, sizeof(A.msg), "Battery low (%d%%): switched off.", bat & 0x7f);
+		A.screen = S_MSG;
+		draw();
+		plat_power_off();
+		return 1;	/* the PC carries on: the message stays */
+	}
 	if (A.screen != S_SLIDE || SS.paused || !secs || (SS.end && !SS.back))
 		return hint_gone;
 	plat_stay_awake();	/* no idle switch-off while it runs */
@@ -2036,7 +2086,7 @@ static void draw_help(void)
 			text_fit(6, y, BAR_FONT, s, SCREEN_W - 12, BLACK);
 		}
 	}
-	hint("Esc: back");
+	hint("Esc: back   Shift+M: loader menu");
 #undef HELP_Y
 }
 
@@ -2206,7 +2256,7 @@ static void search_keys(int key)
 			ss_unpick();
 			A.ss_art = r.target;
 			snprintf(A.ss_title, sizeof(A.ss_title), "%s", r.title);
-			A.ss_osel = 6;	/* on Start */
+			A.ss_osel = 8;	/* on Start */
 			A.screen = S_SLIDEOPT;
 			return;
 		}
@@ -2585,6 +2635,16 @@ void app_key(int key, int mods)
 			ss_setup();
 		else if ((key == 'w' || key == 'W') && A.nwikis) {
 			A.screen = S_WIKIS;
+		} else if (key == 'M') {
+			/* Shift+M: back to the UF2 loader's menu, the place saved */
+			A.screen = A.prev_screen;
+			save_positions();
+			save_state();
+			snprintf(A.msg, sizeof(A.msg), "Going to the loader menu...");
+			A.screen = S_MSG;
+			draw();
+			plat_loader_menu();
+			A.screen = S_HELP;	/* the PC: nothing to go to */
 		} else if (key == 'O') {
 			/* Shift+O (not listed): switch off, the place saved */
 			A.screen = A.prev_screen;
@@ -2691,6 +2751,10 @@ void app_init(void)
 		for (i = 0; i < 5; ++i)
 			if (st[43 + i])
 				A.ss_opt[i] = (uint8_t)(st[43 + i] - 1);
+		if (len > 116 && st[116])
+			A.ss_opt[5] = (uint8_t)(st[116] - 1);
+		if (len > 117 && st[117])
+			A.ss_opt[6] = (uint8_t)(st[117] - 1);
 		memcpy(name, st + 4, 16);
 		name[15] = 0;
 		for (i = 0; i < A.nwikis; ++i)
@@ -2879,10 +2943,10 @@ void app_describe(char *out, size_t cap)
 			 SS.paused ? " paused" : "", SS.end ? " end" : "");
 		break;
 	case S_SLIDEOPT:
-		snprintf(out, cap, "slideopts \"%s\" sel=%d all=%d levels=%d per=%u random=%d secs=%u",
+		snprintf(out, cap, "slideopts \"%s\" sel=%d all=%d levels=%d per=%u random=%d secs=%u lowoff=%d follow=%s",
 			 A.ss_art != TOC_NONE ? A.ss_title : "", A.ss_osel,
-			 A.ss_opt[0], A.ss_opt[1] + 1, ss_per_v[A.ss_opt[2] % 3], A.ss_opt[3],
-			 ss_secs_v[A.ss_opt[4] % 5]);
+			 A.ss_opt[0], A.ss_opt[1] + 1, ss_per_v[A.ss_opt[2] % 4], A.ss_opt[3],
+			 ss_secs_v[A.ss_opt[4] % 5], !A.ss_opt[5], A.ss_opt[6] ? "any" : "lists");
 		break;
 	case S_HELP:
 		snprintf(out, cap, "help pictures=%s", A.pic_none ? "none" : A.pic_big ? "colour" : "grey");

@@ -43,6 +43,8 @@ void plat_present(const uint8_t *fb)
 
 void plat_stay_awake(void) {}
 
+void plat_loader_menu(void) {}
+
 int plat_battery(void)
 {
 	const char *s = getenv("PWG_BATTERY");	/* tests: e.g. 71, or 199 charging */

@@ -43,6 +43,8 @@ int plat_poll(plat_event_t *e) { e->type = PE_NONE; return 0; }
 int plat_wait(plat_event_t *e) { e->type = PE_QUIT; return 1; }
 void plat_stay_awake(void) {}
 
+void plat_loader_menu(void) {}
+
 int plat_battery(void)
 {
 	const char *s = getenv("PWG_BATTERY");	/* tests: e.g. 71, or 199 charging */
@@ -166,6 +168,9 @@ int main(int argc, char **argv)
 			}
 		} else if (strcmp(p, "idle") == 0) {
 			event(PE_IDLE);
+		} else if (strcmp(p, "battery") == 0) {
+			/* what the battery reads from now on: N, or N+128 charging */
+			setenv("PWG_BATTERY", arg, 1);
 		} else if (strcmp(p, "wait") == 0) {
 			/* let N ms pass, then the 1 s tick */
 			extern uint32_t host_ms_skew;

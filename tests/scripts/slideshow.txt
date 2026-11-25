@@ -6,7 +6,7 @@ type london
 key enter
 key f5
 type s
-expect slideopts "London" sel=6 all=0 levels=2 per=20 random=1 secs=5
+expect slideopts "London" sel=8 all=0 levels=2 per=20 random=1 secs=5 lowoff=1 follow=lists
 key enter
 expect slide "London" art=58 page=0 pic=0 shown=1
 key right
@@ -32,10 +32,11 @@ expect shown=3
 key esc
 expect article "London" page=1/156
 # options on the screen (rows: Start from, Pictures, Lists, Links per
-# list, Order, Each picture, Start): from Start, up to Each picture
+# list, Order, Each picture, Low battery, Start): from Start, up to
+# Each picture
 key f5
 type s
-key up
+key up up up
 expect sel=5
 key left
 expect secs=3
@@ -44,17 +45,16 @@ expect secs=0
 key up
 key left
 expect random=0
-key right
-expect random=1
+# (in order from here: random picks would make the list test chancy)
 # another start: Enter on "Start from" picks with the search
-key up up up up
+key up up up up up
 expect sel=0
 key enter
 expect search "London" sel=0 "London" picking
 key bs bs bs bs bs bs
 type list of states
 key enter
-expect slideopts "List of states and territories of the United States" sel=6
+expect slideopts "List of states and territories of the United States" sel=8
 key enter
 expect slide "Washington, D.C."
 key right
@@ -64,3 +64,34 @@ wait 6000
 expect end
 key enter
 expect article "Washington, D.C."
+# links per list: up to 100
+key f5
+type s
+key up up up up up
+expect sel=3
+key left
+expect per=10
+key left
+expect per=100
+key right
+expect per=10
+key right
+expect per=20
+# follow links: of lists only, or of any article (TOP100's articles
+# link to few others in it: its own pictures, then the end)
+key down down down down
+expect sel=7
+key right
+expect follow=any
+key down
+key enter
+expect slide
+# low battery: off at 20% while a show runs, never while charging
+expect slide
+battery 148
+wait 1100
+expect slide
+battery 20
+wait 1100
+expect message "Battery low (20%): switched off."
+battery 71

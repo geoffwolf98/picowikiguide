@@ -4,7 +4,7 @@ Offline Wikipedia (and other Kiwix ZIM wikis) for the ClockworkPi PicoCalc
 with a Raspberry Pi Pico 2 W. A fork of WikiReader Gen2. See `DESIGN.md`
 for how it works and the card format.
 
-Version 1.1.1 (25 Nov 2026): scrolling.
+Version 1.1.4 (25 Nov 2026): scrolling.
 
 * `zimprep`: turns a ZIM into a PicoWikiGuide wiki folder.
 * `pwg-sdl`: the app in a 320 x 320 window, driven by your keyboard.
@@ -57,7 +57,7 @@ package. Everything else (zstd, xz) is in `third_party/`.
 ```
 sudo apt install libsdl2-dev        # once (Mint, Ubuntu, Debian)
 mkdir -p PicoWikiGuide
-tar xzf PicoWikiGuide-1.1.1.tar.gz -C PicoWikiGuide --strip-components=1
+tar xzf PicoWikiGuide-1.1.4.tar.gz -C PicoWikiGuide --strip-components=1
 cd PicoWikiGuide
 make clean                          # always, after unpacking a new version
 make -j
@@ -143,10 +143,10 @@ Use a Wikipedia `maxi` ZIM (it has the pictures) and:
 
 | For | zimprep options | English Wikipedia (maxi, 2026-08) |
 |---|---|---|
-| The best look: colour pictures | (none: the default) | about 87 GiB (128 GB card), about 50 minutes on a 32-thread PC |
+| The best look: colour pictures | (none: the default) | 87 GiB (128 GB card), about 50 minutes on a 32-thread PC; 9.67 million articles, 97.7 million pages (zimprep 1.0.0) |
 | Colour, a little smaller | `--pic-height 220` | an estimated 6 to 13 GB less |
 | Grey pictures (the WikiReader look) | `--grey` | smaller again (grey pictures are about 0.6 of colour) |
-| Text only, smallest | `--pictures none` | 26 GB (32 GB card), about 23 minutes on a 32-thread PC; any ZIM, `nopic` and `mini` too |
+| Text only, smallest | `--pictures none` | 26 GB (32 GB card), about 17 minutes on a 32-thread PC (zimprep 1.0.0); any ZIM, `nopic` and `mini` too |
 
 ```
 build/zimprep -n ENPEDIA wikipedia_en_all_maxi_2026-08.zim ~/card
@@ -244,7 +244,7 @@ PicoCalc's own file code: `build/pwg-imgtest card.img tests/scripts/basic.txt`.
 `tests/run.sh` makes that image itself (`tests/mkimage.py`) when
 pyfatfs is installed (`pip install pyfatfs`).
 
-The scripts run with `PWG_HEAP=168108`: a heap like the PicoCalc's (the
+The scripts run with `PWG_HEAP=167084`: a heap like the PicoCalc's (the
 firmware's free RAM: 0x20080000 minus the `end` symbol, from
 `arm-none-eabi-nm build-pico/picowikiguide.elf`), allocated the way
 newlib does, so running out of memory, holes and leaks show up on the
@@ -418,6 +418,21 @@ every title and prefixes of it with several index summary steps.
   the options, and Start, with what the keys do on the bottom line. In a
   show the keys line shows for 4 s after each key; O opens the options
   and Esc there goes back to the show.
+* 1.1.2: slideshow: up to 100 links per list; a new option "Low
+  battery: switch off at 20%" (the default; or "keep going"): a show
+  left running switches off at 20%, the place saved, never while
+  charging, so on the charger it can run for ever. It remembers the last
+  512 articles shown (was 256) against repeats. README: measured English
+  Wikipedia sizes (colour 87 GiB; text only 26 GB in 17 minutes).
+* 1.1.3: slideshow option "Follow links: of lists only / of any
+  article". With "any", an ordinary article shows its own pictures,
+  then the lead pictures of the articles it links to (every link, as its
+  text is prose; random picks spread over them). The random pick now
+  counts only links to articles in the wiki.
+* 1.1.4: Shift+M on F5 goes back to the UF2 loader's menu (shown on
+  F5's bottom line), the place saved first: watchdog scratch 0 =
+  0xe98cc638, scratch 1 = 1, as pelrun's uf2loader asks. Without the
+  loader it just restarts.
 
 * 0.5.5: README: installing through pelrun's UF2 Loader (`pico2-apps`),
   `make clean` after unpacking a new version, FAT32 card format, the

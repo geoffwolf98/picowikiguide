@@ -43,6 +43,9 @@ void plat_stay_awake(void);
 /* restart the device (state already saved); returns where there is
  * no such thing (the PC) */
 void plat_restart(void);
+/* restart into the UF2 loader's menu (pelrun's uf2loader: watchdog
+ * scratch 0 = 0xe98cc638, scratch 1 = 1); without it, a plain restart */
+void plat_loader_menu(void);
 /* ms until the idle switch-off, or -1 where there is none */
 int32_t plat_off_in(void);
 /* free memory in bytes, and the largest block that can be had; -1 where

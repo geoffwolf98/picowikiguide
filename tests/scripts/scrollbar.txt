@@ -32,3 +32,7 @@ expect article "The Beatles" page=224/224
 key f5
 type O
 expect help
+# Shift+M on F5 (still open): the UF2 loader's menu, the place saved
+# (the PC stays)
+type M
+expect help

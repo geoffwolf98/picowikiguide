@@ -114,6 +114,16 @@ void plat_restart(void)
 		tight_loop_contents();
 }
 
+#define LOADER_MENU_MAGIC 0xe98cc638u	/* uf2loader: open the menu */
+void plat_loader_menu(void)
+{
+	watchdog_hw->scratch[0] = LOADER_MENU_MAGIC;
+	watchdog_hw->scratch[1] = 1;
+	watchdog_reboot(0, 0, 10);
+	for (;;)
+		tight_loop_contents();
+}
+
 /* ------------------------------------------------------------------ */
 /* keyboard */
 
